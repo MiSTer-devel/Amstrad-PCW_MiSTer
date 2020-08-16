@@ -1,7 +1,7 @@
 # Amstrad PCW MiSTer Core
 <img src="./docs/images/gnome.jpg" alt="Gnome Ranger" width="400" height="300">
 
-Gnome Ranger running on the Amstrad PCW core by Stephen Eddy
+Gnome Ranger running on the Amstrad PCW core by [steddyman](https://twitter.com/steddyman)
 ## Overview
 The Amstrad PCW was a line of computers released by Amstrad UK in the mid 1980's to provide a cheaper alternative to owning an IBM PC for word processing and simple office type applications.  It was supplied with a detachable keyboard, printer, a disk drive and a high resolution monitor.  This monitor allowed the PCW to display sharp monochrome graphics at a resolution of 720 x 256.
 
