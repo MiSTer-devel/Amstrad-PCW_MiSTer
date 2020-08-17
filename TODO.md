@@ -11,6 +11,14 @@
   * Get Mouse support working - AMS Done, Kempston Done, Keymouse Done
   * Find issue with intermittent disk corruption
   * Find screen corruption issue with HoE at boot
+  * RAMtest has corrupt screen at start
+  * Get formatting working for all disk types - Unlikely to ever be supported
+
+  * CF2DD support
+    * Disk 40 - Drive 40 = 1 : 1 Track
+    * Disk 40 - Drive 80 = 1 : 2 Track
+    * Disk 80 - Drive 40 = 1 : 1 Track - will error
+    * Disk 80 - Drive 80 = 1 : 1 Tract
 
 * Future features
   * Add memory above 128K as SDRAM and options for different memory sizes

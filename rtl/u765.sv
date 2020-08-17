@@ -48,6 +48,7 @@ module u765 #(parameter CYCLES = 20'd4000, SPECCY_SPEEDLOCK_HACK = 0)
 
 	input wire		 tc,		// terminal count (terminate)
 	output logic     int_out,   // Output interrupt line
+	input wire [1:0] density,	// CF2 = 0, CF2DD = 1
 
 	input wire  [1:0] img_mounted, // signaling that new image has been mounted
 	input wire        img_wp,      // write protect. latched at img_mounted
@@ -79,6 +80,10 @@ localparam UPD765_MAIN_CB  = 4;
 localparam UPD765_MAIN_EXM = 5;
 localparam UPD765_MAIN_DIO = 6;
 localparam UPD765_MAIN_RQM = 7;
+
+// Disk densities
+localparam CF2 = 1'b0;
+localparam CF2DD = 1'b1;
 
 localparam UPD765_SD_BUFF_TRACKINFO = 1'd0;
 localparam UPD765_SD_BUFF_SECTOR = 1'd1;
@@ -246,6 +251,7 @@ always @(posedge clk_sys) begin
 	reg       image_trackinfo_dirty[2];
 	reg       image_edsk[2]; //DSK - 0, EDSK - 1
 	reg [1:0] image_scan_state[2] = '{ 0, 0 };
+	reg [1:0] image_density;
 	reg [7:0] i_current_track_sectors[2][2] /* synthesis keep */;  //number of sectors on the current track /head/drive
 	reg [7:0] i_current_sector_pos[2][2] /* synthesis keep */; //sector where the head currently positioned
 	reg[19:0] i_steptimer[2], i_rpm_timer[2][2];
@@ -293,6 +299,7 @@ always @(posedge clk_sys) begin
 	reg i_bc; //bad cylinder
 	reg old_hds;
 	reg old_tc;
+	logic [7:0] tmp_ncn;
 
 	reg i_mt;
 	//reg i_mfm;
@@ -309,6 +316,7 @@ always @(posedge clk_sys) begin
 			image_size[i] <= img_size;
 			image_scan_state[i] <= |img_size; //hacky
 			image_ready[i] <= 0;
+			image_density[i] <= (img_size > 250000) ? CF2DD : CF2; // very hacky
 			int_state[i] <= 0;
 			seek_state[i] <= 0;
 			next_weak_sector[i] <= 0;
@@ -452,6 +460,7 @@ always @(posedge clk_sys) begin
 		if (motor[i_current_drive]) begin
 			for (int i=0; i<2 ;i++) begin
 				if (i_rpm_timer[i_current_drive][i] >= SECTOR_TIME) begin
+					// i_current_sector_pos is physical sector number on track (e.g. 1,2,3,etc)
 					i_current_sector_pos[i_current_drive][i] <=
 					i_current_sector_pos[i_current_drive][i] == i_current_track_sectors[i_current_drive][i] - 1'd1 ?
 						8'd0 : i_current_sector_pos[i_current_drive][i] + 1'd1;
@@ -568,7 +577,7 @@ always @(posedge clk_sys) begin
 				if (~old_rd & rd & a0) begin
 					m_data <= { 1'b0,
 								ready[ds0] & image_wp[ds0],         //write protected
-								available[ds0],                     //ready
+								motor[ds0] & available[ds0],        //ready - needed for controller detection
 								image_ready[ds0] & !pcn[ds0],       //track 0
 								image_ready[ds0] & image_sides[ds0],//two sides
 								image_ready[ds0] & hds,             //head address
@@ -617,12 +626,25 @@ always @(posedge clk_sys) begin
 
 				COMMAND_SEEK_EXEC1:
 				if (~old_wr & wr & a0) begin
-					ncn[ds0] <= din;
-					if ((motor[ds0] && ready[ds0] && image_ready[ds0] && din<image_tracks[ds0]) || !din) begin
-						seek_state[ds0] <= 1;
-					end else begin
-						//Seek error
-						int_state[ds0] <= 1;				
+					// This next line is intentionally blocking
+					if(image_density[ds0]==CF2 && density[ds0]==CF2DD)
+					begin
+						ncn[ds0] <= din >> 1;
+						if ((motor[ds0] && ready[ds0] && image_ready[ds0] && (din >> 1)<image_tracks[ds0]) || !din) begin
+							seek_state[ds0] <= 1;
+						end else begin
+							//Seek error
+							int_state[ds0] <= 1;				
+						end
+					end 
+					else begin
+						ncn[ds0] <= din;
+						if ((motor[ds0] && ready[ds0] && image_ready[ds0] && din<image_tracks[ds0]) || !din) begin
+							seek_state[ds0] <= 1;
+						end else begin
+							//Seek error
+							int_state[ds0] <= 1;				
+						end
 					end
 					state <= COMMAND_IDLE;
 				end
@@ -796,6 +818,7 @@ always @(posedge clk_sys) begin
 						if (!image_edsk[ds0]) i_sector_size <= 8'h80 << buff_data_in[2:0];
 						buff_addr[7:0] <= 8'h18; //sector info list
 						buff_wait <= 1;
+				// i_current_sector is the Sector id on the track and they can be out of order in the image (e.g. 1,6,3,9,etc)
 				end else if (i_current_sector > i_total_sectors) begin
 						m_status[UPD765_MAIN_EXM] <= 0;
 						//sector not found or end of track

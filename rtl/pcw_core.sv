@@ -70,6 +70,7 @@ module pcw_core(
     input wire [1:0]  img_mounted,
 	input wire        img_readonly,
 	input wire [31:0] img_size,
+    input wire [1:0]  density,
 
 	output logic [31:0] sd_lba,
 	output logic [1:0] sd_rd,
@@ -629,7 +630,7 @@ module pcw_core(
 
     reg  [1:0] u765_ready = 0;
     always @(posedge clk_sys) if(img_mounted[0]) u765_ready[0] <= |img_size;
-    //always @(posedge clk_sys) if(img_mounted[1]) u765_ready[1] <= 1'b0; //|img_size;
+    always @(posedge clk_sys) if(img_mounted[1]) u765_ready[1] <= |img_size;
 
     logic fdc_int;
     u765 u765
@@ -641,13 +642,14 @@ module pcw_core(
         .a0(cpua[0]),
         .ready(u765_ready),
         .motor({motor,motor}),
-        .available(2'b01),
+        .available(2'b11),
         .nRD(~fdc_sel | ior), 
         .nWR(~fdc_sel | iow),
         .din(cpudo),
         .dout(fdc_dout),
         .int_out(fdc_int),
         .tc(tc),
+        .density(density),
 
         .img_mounted(img_mounted),
         .img_size(img_size[31:0]),

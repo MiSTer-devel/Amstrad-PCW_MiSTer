@@ -142,8 +142,8 @@ localparam BOOT_ROM_END = 16'd275;	// Length of boot rom
 `include "build_id.v"
 localparam CONF_STR = {
 	"Amstrad PCW;;",
-	"S0,DSK,Mount A:;",
-//	"S1,DSK,Mount B:;",
+	"S0,DSK,Mount A: (180k);",
+	"S1,DSK,Mount B: (720k);",
 	"-;",
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
@@ -196,7 +196,7 @@ wire [21:0] gamma_bus;
 wire [15:0] joystick_0, joystick_1;
 wire LED;
 
-hps_io #(.STRLEN(($size(CONF_STR)>>3) ), .WIDE(0), .VDNUM(1)) hps_io
+hps_io #(.STRLEN(($size(CONF_STR)>>3) ), .WIDE(0), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
@@ -298,6 +298,7 @@ boot_loader boot_loader
 	.data(read_data)
 );
 
+wire [1:0] density = status[16:15];
 pcw_core pcw_core
 (
 	.reset(reset),
@@ -336,6 +337,7 @@ pcw_core pcw_core
 	.img_mounted(img_mounted),
 	.img_readonly(img_readonly),
 	.img_size(img_size),
+	.density(2'b01),	// SD:0, DD:1
 
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),
