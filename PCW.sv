@@ -142,9 +142,10 @@ localparam BOOT_ROM_END = 16'd275;	// Length of boot rom
 `include "build_id.v"
 localparam CONF_STR = {
 	"Amstrad PCW;;",
-	"S0,DSK,Mount A: (180k);",
-	"S1,DSK,Mount B: (720k);",
+	"S0,DSK,Mount A:;",
+	"S1,DSK,Mount B:;",
 	"-;",
+	"O4,System,8256/8512,9512+;",
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
@@ -295,6 +296,7 @@ end
 boot_loader boot_loader
 (
 	.address(read_addr),
+	.model(status[4]),
 	.data(read_data)
 );
 
@@ -324,6 +326,7 @@ pcw_core pcw_core
 	.disp_color(status[6:5]),
 	.ntsc(status[7]),
 	.overclock(status[9:8]),
+	.model(status[4]),
 
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
@@ -337,7 +340,7 @@ pcw_core pcw_core
 	.img_mounted(img_mounted),
 	.img_readonly(img_readonly),
 	.img_size(img_size),
-	.density(2'b01),	// SD:0, DD:1
+	.density({1'b1, status[4]}),		// 8256/512 = A=SD, 9512+ A=DD
 
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),

@@ -90,6 +90,7 @@ module video_controller(
     // Setup roller ram display list pointer at end of last frame 
     // This is a pointer to the first entry in roller ram
     logic [16:0] roller_addr = 17'd0;
+    logic [16:0] tmp_addr = 17'd0;
     logic old_start = 1'b0;
     always @ (posedge clk_sys)
     begin
@@ -98,14 +99,15 @@ module video_controller(
             old_start <= screen_start;
             // Going from Screen end to Screen start
             if(~old_start & screen_start) begin     
-                roller_addr <= {roller_ptr[7:0],yscroll[7:0],1'b0};
+                roller_addr <= {roller_ptr[7:0],9'b0};
             end
         end
     end
 
     // Offset Y by Y scroll register
     //byte unsigned yoffset /* synthesis keep */;
-    //assign yoffset = y;  //((y + yscroll) & 8'hFF);
+    //assign yoffset = ((y + yscroll) & 8'hFF);
+    //assign roller_addr = tmp_addr + (yoffset << 1);
 
     // lookup_addr and line_addr driver
     logic [17:0] line_addr = 18'd0;
@@ -135,7 +137,7 @@ module video_controller(
                     roller_state <= GET_LSB;
                     video_lookup <= 1'b1;
                     // Read MSB of address
-                    lookup_addr <= roller_addr + (y << 1);
+                    lookup_addr <= roller_addr + (((y + yscroll) & 8'hff) << 1);
                 end else begin
                     case(roller_state)
                         IDLE: begin
@@ -146,7 +148,7 @@ module video_controller(
                         GET_LSB: begin
                             video_lookup <= 1'b1;
                             // Read LSB of address
-                            lookup_addr <= roller_addr + (y << 1) + 1;
+                            lookup_addr <= roller_addr + (((y + yscroll) & 8'hff) << 1) + 1;
                             // din should equal LSB from previous step
                             roller_bits[7:0] <= din;
                             roller_state <= GET_MSB;

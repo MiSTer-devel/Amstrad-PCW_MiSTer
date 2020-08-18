@@ -557,7 +557,9 @@ always @(posedge clk_sys) begin
 
 				COMMAND_SENSE_INTERRUPT_STATUS2:
 				if (~old_rd & rd & a0) begin
-					m_data <= int_state[0] ? pcn[0] : pcn[1];
+					m_data <= int_state[0] ? 
+						((image_density[0]==CF2 && density[0]==CF2DD)  ? pcn[0] << 1 : pcn[0]) :  
+						((image_density[1]==CF2 && density[1]==CF2DD) ? pcn[1] << 1 : pcn[1]);
 					int_state[int_state[0] ? 0 : 1] <= 0;
 					state <= COMMAND_IDLE;
 				end
@@ -877,7 +879,7 @@ always @(posedge clk_sys) begin
 					state <= COMMAND_RW_DATA_EXEC_WEAK;
 				end
 
-				// Copy protection, PCW skips to RW_DATA_EXEC5
+				// Copy protection, PCW skips to RW_DATA_EXEC5 (not true for EDSK)
 				COMMAND_RW_DATA_EXEC_WEAK:
 				if (image_edsk[ds0] &&
 					(i_sector_size == { i_bytes_to_read, 1'b0 } || // 2 weak sectors
@@ -899,7 +901,7 @@ always @(posedge clk_sys) begin
 						next_weak_sector[ds0] <= next_weak_sector[ds0] + 1'd1;
 					else
 						next_weak_sector[ds0] <= 0;
-					if (i_bytes_to_read > i_sector_size) i_bytes_to_read <= i_sector_size;
+//					if (i_bytes_to_read > i_sector_size) i_bytes_to_read <= i_sector_size;
 					state <= COMMAND_RW_DATA_EXEC5;
 				end
 
@@ -958,12 +960,15 @@ always @(posedge clk_sys) begin
 									i_sector_st1[5] & i_sector_st2[5] & !i_bytes_to_read[14:4]) ?
 								buff_data_in << next_weak_sector[ds0] : buff_data_in;
 
+					m_status[UPD765_MAIN_RQM] <= 0;
+					if (i_sector_size) begin
+						i_sector_size <= i_sector_size - 1'd1;
 						buff_addr <= buff_addr + 1'd1;
 						buff_wait <= 1;
-						m_status[UPD765_MAIN_RQM] <= 0;
-						i_bytes_to_read <= i_bytes_to_read - 1'd1;
 						i_seek_pos <= i_seek_pos + 1'd1;
-						i_timeout <= OVERRUN_TIMEOUT;
+					end
+					i_bytes_to_read <= i_bytes_to_read - 1'd1;
+					i_timeout <= OVERRUN_TIMEOUT;
 						if(ndma_mode) int_state[ds0] <= 1'b0;
 					end else if (i_write & ~old_wr & wr & a0) begin
 						buff_wr <= 1;
@@ -980,9 +985,13 @@ always @(posedge clk_sys) begin
 				COMMAND_RW_DATA_EXEC7:
 				begin
 					buff_wr <= 0;
-					buff_addr <= buff_addr + 1'd1;
+					if (i_sector_size) begin
+						i_sector_size <= i_sector_size - 1'd1;
+						buff_addr <= buff_addr + 1'd1;
+						buff_wait <= 1;
+						i_seek_pos <= i_seek_pos + 1'd1;
+					end
 					i_bytes_to_read <= i_bytes_to_read - 1'd1;
-					i_seek_pos <= i_seek_pos + 1'd1;
 					if (&buff_addr) begin
 						//sector continues on the next LBA
 						//so write out the current before reading the next

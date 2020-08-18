@@ -57,6 +57,7 @@ module pcw_core(
     input wire [1:0] disp_color,
     input wire [1:0] overclock,
     input wire ntsc,
+    input wire model,
 
     input wire dn_clk,
     input wire dn_go,
@@ -93,6 +94,9 @@ module pcw_core(
     localparam MOUSE_AMX        = 2'b01;
     localparam MOUSE_KEMPSTON   = 2'b10;
     localparam MOUSE_KEYMOUSE   = 2'b11;
+
+    localparam MODEL_8512 = 0;
+    localparam MODEL_9512 = 1;
 
     // Audio channels
     logic [7:0] ch_a;
@@ -206,6 +210,8 @@ module pcw_core(
     logic kbd_sel/* synthesis keep */;
     assign kbd_sel = ram_b_addr[17:4]==14'b00111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
     assign LED = kbd_sel;
+    logic daisy_sel;
+    assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) ? 1'b1 : 1'b0;
 
     // Create processor instance
     T80pa cpu(
@@ -254,8 +260,9 @@ module pcw_core(
             casez(cpua[7:0])
                 8'hf8: cpudi = portF8;
                 8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
-                8'hfc: cpudi = 8'hf8;       // Printer Controller
-                8'hfd: cpudi = 8'hc8;       // Printer Controller
+                8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
+                16'h01fc: cpudi = model ? daisy_dout : 8'hff;    // Printer controller
+                8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
                 8'he0: begin                // Joystick or CPS
                     case(joy_type)
                         JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
@@ -526,6 +533,18 @@ module pcw_core(
         else if(disp_color==2'b10) RGB = rgb_amber;
     end
 
+    logic [7:0] daisy_dout;
+    // Fake daisywheel printer interface
+    fake_daisy daisy(
+        .reset(reset),
+        .clk_sys(clk_sys),
+        .ce(cpuclk),
+        .sel(daisy_sel),
+        .address({cpua[8],cpua[0]}),
+        .wr(~iow),
+        .din(cpudo),
+        .dout(daisy_dout)
+    );
 
     // Mouse emulation
     logic mouse_left, mouse_middle, mouse_right;

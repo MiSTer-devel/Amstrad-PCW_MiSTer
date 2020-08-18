@@ -7,6 +7,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/dpram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ym2149.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/u765.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boot_loader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fake_daisy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/z80_regset.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video_controller.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video_sync.sv
