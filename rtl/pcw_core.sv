@@ -211,7 +211,7 @@ module pcw_core(
     assign kbd_sel = ram_b_addr[17:4]==14'b00111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
     assign LED = kbd_sel;
     logic daisy_sel;
-    assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) ? 1'b1 : 1'b0;
+    assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) && (~ior | ~iow)? 1'b1 : 1'b0;
 
     // Create processor instance
     T80pa cpu(

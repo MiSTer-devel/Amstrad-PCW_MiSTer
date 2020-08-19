@@ -53,8 +53,8 @@ module fake_daisy
 
 );
 
-localparam HOST_RECV = 8'b10110001;
-localparam HOST_SEND = 8'b10110010;
+localparam HOST_RECV = 8'b11001010;
+localparam HOST_SEND = 8'b11101001;
 logic [7:0] status;     // Current status
 logic [7:0] command;    // First byte of any command received
 logic [7:0] data;       // Second byte of any command received
@@ -94,15 +94,18 @@ begin
                     out <= 8'hff;
                 end
             end
+            // A read of FD will also reset the mode back to HOST_SEND
+            if(~old_sel && sel && ~wr && address==2'b01) status <= HOST_SEND;
         end
     end
 end
 
 always_comb
 begin
-    if(sel & ce) begin
-        if(~wr && address[0]==1'b0) dout = out;
-        else dout = status;
+    if(sel) begin
+        if(~wr && address==2'b00) dout = out;           // Data output from command (0xFC)
+        else if(~wr && address==2'b10) dout = 8'h40;    // Printer status (0x1FC) - No printer
+        else dout = status;                             // Status (0xFD)
     end else dout = 8'hff;
 end
 
