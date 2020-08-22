@@ -47,6 +47,12 @@ The main operating system the PCW used was called CP/M which was developed by Di
 * CP/M disk images can infrequently become corrupt - Back them up
 * CPC Paging mode not supported - I am not aware of any PCW games using it
 
+# Changes from previous release
+* Support for PCW9512+ 3.5" software
+* Dual drive support added
+* Dual bootloader to support booting all media types
+* Fixed corruption issue with RAMtest
+
 ## Upcoming features
 The following features are coming shortly
 * 2MB memory support using SDRAM

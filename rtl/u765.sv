@@ -191,16 +191,16 @@ u765_dpram sbuf
 	.q_b(buff_data_in)
 );
 
-// Clone SD writes into sd_debug for memory debugging using in system member debugger in Quartus
-// Comment out this section for release
-logic [7:0] debug_data /*synthesis noprune*/;
-sd_debug sd_debug(
-	.clock(clk_sys),
-	.address({ds0, sd_buff_type,hds,sd_buff_addr}),
-	.data(sd_buff_dout),
-	.wren(sd_buff_wr & sd_ack),
-	.q(debug_data)
-);
+// // Clone SD writes into sd_debug for memory debugging using in system member debugger in Quartus
+// // Comment out this section for release
+// logic [7:0] debug_data /*synthesis noprune*/;
+// sd_debug sd_debug(
+// 	.clock(clk_sys),
+// 	.address({ds0, sd_buff_type,hds,sd_buff_addr}),
+// 	.data(sd_buff_dout),
+// 	.wren(sd_buff_wr & sd_ack),
+// 	.q(debug_data)
+// );
 
 //track offset buffer
 //single port buffer in RAM

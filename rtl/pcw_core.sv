@@ -242,15 +242,15 @@ module pcw_core(
     logic disk_to_nmi = 0;  // if 1, disk generates nmi
     logic disk_to_int = 0;  // if 1, disk generates int
     logic tc = 0;           // TC signal to reset disk
-    logic [7:0] portF0 /* synthesis keep */;     // 0x0000-0x3fff page map
-    logic [7:0] portF1 /* synthesis keep */;     // 0x4000-0x7fff page map
-    logic [7:0] portF2 /* synthesis keep */;     // 0x8000-0xbfff page map
-    logic [7:0] portF3 /* synthesis keep */;     // 0xc000-0xffff page map
-    logic [7:0] portF4 /* synthesis keep */;     // Memory read lock register (CPC only)
-    logic [7:0] portF5 /* synthesis keep */;     // Roller RAM address
-    logic [7:0] portF6 /* synthesis keep */;     // Y scroll
-    logic [7:0] portF7 /* synthesis keep */;     // Inverse / Disable
-    logic [7:0] portF8 /* synthesis keep */;     // Ntsc / Flyback (read)
+    logic [7:0] portF0 /*synthesis noprune*/;     // 0x0000-0x3fff page map
+    logic [7:0] portF1 /*synthesis noprune*/;     // 0x4000-0x7fff page map
+    logic [7:0] portF2 /*synthesis noprune*/;     // 0x8000-0xbfff page map
+    logic [7:0] portF3 /*synthesis noprune*/;     // 0xc000-0xffff page map
+    logic [7:0] portF4 /*synthesis noprune*/;     // Memory read lock register (CPC only)
+    logic [7:0] portF5 /*synthesis noprune*/;     // Roller RAM address
+    logic [7:0] portF6 /*synthesis noprune*/;     // Y scroll
+    logic [7:0] portF7 /*synthesis noprune*/;     // Inverse / Disable
+    logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
 
     // Set CPU data in
     always_comb
@@ -455,14 +455,52 @@ module pcw_core(
     assign inverse = portF7[7];
     assign disable_vid = ~portF7[6]; // & ~portF8[3];
 
-    // Paged memory support
+    // Ram B address for various paging modes
+    logic [17:0] pcw_ram_b_addr/* synthesis keep */;
+    logic [17:0] cpc_read_ram_b_addr/* synthesis keep */;
+    logic [17:0] cpc_write_ram_b_addr/* synthesis keep */;
+
+    // PCW Paged memory support for read and writes
     always_comb
     begin
         case(cpua[15:14])
-            2'b00: ram_b_addr = {portF0[3:0],cpua[13:0]};
-            2'b01: ram_b_addr = {portF1[3:0],cpua[13:0]};
-            2'b10: ram_b_addr = {portF2[3:0],cpua[13:0]};
-            2'b11: ram_b_addr = {portF3[3:0],cpua[13:0]};
+            2'b00: pcw_ram_b_addr = {portF0[3:0],cpua[13:0]};
+            2'b01: pcw_ram_b_addr = {portF1[3:0],cpua[13:0]};
+            2'b10: pcw_ram_b_addr = {portF2[3:0],cpua[13:0]};
+            2'b11: pcw_ram_b_addr = {portF3[3:0],cpua[13:0]};
+        endcase
+    end
+
+    // CPC Paged memory support for reads
+    always_comb
+    begin
+        case(cpua[15:14])
+            2'b00: cpc_read_ram_b_addr = portF4[4] ? {1'b0,portF0[2:0],cpua[13:0]} : {1'b0,portF0[6:4],cpua[13:0]};
+            2'b01: cpc_read_ram_b_addr = portF4[5] ? {1'b0,portF1[2:0],cpua[13:0]} : {1'b0,portF1[6:4],cpua[13:0]};
+            2'b10: cpc_read_ram_b_addr = portF4[6] ? {1'b0,portF2[2:0],cpua[13:0]} : {1'b0,portF2[6:4],cpua[13:0]};
+            2'b11: cpc_read_ram_b_addr = portF4[7] ? {1'b0,portF3[2:0],cpua[13:0]} : {1'b0,portF3[6:4],cpua[13:0]};
+        endcase
+    end
+
+    // CPC Paged memory support for writes
+    always_comb
+    begin
+        case(cpua[15:14])
+            2'b00: cpc_write_ram_b_addr = {1'b0,portF0[2:0],cpua[13:0]};
+            2'b01: cpc_write_ram_b_addr = {1'b0,portF1[2:0],cpua[13:0]};
+            2'b10: cpc_write_ram_b_addr = {1'b0,portF2[2:0],cpua[13:0]};
+            2'b11: cpc_write_ram_b_addr = {1'b0,portF3[2:0],cpua[13:0]};
+        endcase
+    end
+
+    // Finally memory address based upon above page modes
+    always_comb
+    begin
+        case(cpua[15:14])
+            2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
+            2'b01: ram_b_addr = portF1[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
+            2'b10: ram_b_addr = portF2[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
+            2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
         endcase
     end
 
@@ -506,6 +544,19 @@ module pcw_core(
         .vb(vblank),
         .timer_int(vid_timer)
     );
+
+    // Head over heals duplicate writes to 0xc000-c1ff for debugging
+    // Clone SD writes into sd_debug for memory debugging using in system member debugger in Quartus
+    // logic [7:0] debug_vid /*synthesis noprune*/;
+    // logic c000_range;
+    // assign c000_range = (ram_b_addr >= 18'hc000 && ram_b_addr < 18'hcfff) & ~memw & GCLK;
+    // sd_debug vid_debug(
+    //     .clock(clk_sys),
+    //     .address(ram_b_addr[11:0]),
+    //     .data(cpudo),
+    //     .wren(c000_range),
+    //     .q(debug_vid)
+    // );
 
     // Video colour processing
     always_comb begin

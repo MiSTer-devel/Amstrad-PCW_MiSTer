@@ -9,11 +9,12 @@
   * Fix Beeper sound - Done
   * Add DKTronics joystick and sound support - Done
   * Get Mouse support working - AMS Done, Kempston Done, Keymouse Done
+  * Create fake daisywheel module to boot 3.5" disks - Done
+  * RAMtest has corrupt screen at start - done
   * Find issue with intermittent disk corruption
   * Find screen corruption issue with HoE at boot
-  * RAMtest has corrupt screen at start
   * Fix Blagger stuck key
-  * Create fake daisywheel module to boot 3.5" disks
+
   
 
   * CF2DD support
