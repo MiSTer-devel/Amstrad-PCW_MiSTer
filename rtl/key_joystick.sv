@@ -75,8 +75,8 @@ logic        capslock = 0;
 
 // Magnitude
 logic [6:0] dxm, dym;
-assign dxm = mouse_x[8] ? ~mouse_x[6:0] + 1 : mouse_x[6:0];
-assign dym = mouse_y[8] ? ~mouse_y[6:0] + 1 : mouse_y[6:0];
+assign dxm = mouse_x[8] ? ~mouse_x[6:0] + 7'd1 : mouse_x[6:0];
+assign dym = mouse_y[8] ? ~mouse_y[6:0] + 7'd1 : mouse_y[6:0];
 // Tracked position
 logic [6:0] dxp;
 logic [6:0] dyp;
@@ -93,8 +93,8 @@ begin
 	end
 	// Update positions on new mouse data and wrap around
 	else if(old_pulse != mouse_pulse) begin
-		dxp <= mouse_x[8] ? dxp - dxm / 8 : dxp + dxm / 8;
-		dyp <= mouse_y[8] ? dyp - dym / 8 : dyp + dym / 8;
+		dxp <= mouse_x[8] ? dxp - dxm / 7'd8 : dxp + dxm / 7'd8;
+		dyp <= mouse_y[8] ? dyp - dym / 7'd8 : dyp + dym / 7'd8;
     end
 end
 

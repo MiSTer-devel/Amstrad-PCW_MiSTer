@@ -257,31 +257,33 @@ module pcw_core(
     begin
         if(~ior)
         begin
-            casez(cpua[7:0])
-                8'hf8: cpudi = portF8;
-                8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
-                8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
-                16'h01fc: cpudi = model ? daisy_dout : 8'hff;    // Printer controller
-                8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
-                8'he0: begin                // Joystick or CPS
-                    case(joy_type)
-                        JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
-                        JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
-                        default: cpudi = 8'h00;       // Dart and CPS
-                    endcase
-                end
-                // Kempston Mouse
-                8'b110100??, 8'hd4: cpudi = kempston_dout;
-                // AMX Mouse
-                8'b10?000??: cpudi = amx_dout;
-                // DK Tronics sound and joystick controller
-                8'ha9: cpudi = dk_out;      
-                // Kempston Joystick
-                8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
-                // Floppy controller
-                8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
-                default: cpudi = 8'hff;             
-            endcase
+				if(cpua[15:0]==16'h01fc) cpudi = model ? daisy_dout : 8'hff; 
+				else begin		
+					casez(cpua[7:0])
+						 8'hf8: cpudi = portF8;
+						 8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
+						 8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
+						 8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
+						 8'he0: begin                // Joystick or CPS
+							  case(joy_type)
+									JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
+									JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
+									default: cpudi = 8'h00;       // Dart and CPS
+							  endcase
+						 end
+						 // Kempston Mouse
+						 8'b110100??, 8'hd4: cpudi = kempston_dout;
+						 // AMX Mouse
+						 8'b10?000??: cpudi = amx_dout;
+						 // DK Tronics sound and joystick controller
+						 8'ha9: cpudi = dk_out;      
+						 // Kempston Joystick
+						 8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
+						 // Floppy controller
+						 8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
+						 default: cpudi = 8'hff;             
+					endcase
+				end
         end
         else begin
             cpudi = kbd_sel ? kbd_data : ram_b_dout;
@@ -397,7 +399,7 @@ module pcw_core(
         if(timer_pe) 
         begin
             // Timer count and int line processing
-            if(!(&timer_misses)) timer_misses <= timer_misses + 'b1;
+            if(!(&timer_misses)) timer_misses <= timer_misses + 4'b1;
             if(~iff1) timer_line <= 1'b0;
             else timer_line <= 1'b1;
             // NMI line processing occurs on timer
@@ -423,7 +425,7 @@ module pcw_core(
                 timer_line <= 1'b0;
                 timer_misses <= 'b0;
             end
-            else clear_timer_count <= clear_timer_count + 'd1;
+            else clear_timer_count <= clear_timer_count + 4'd1;
         end
         // Clear interrupts
         if(int_mode_pe)

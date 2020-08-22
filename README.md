@@ -42,16 +42,15 @@ Games are usually supplied on two disks, normally the first disk is a CP/M boot 
 The main operating system the PCW used was called CP/M which was developed by Digital Research and was one of the worlds first cross platform operating systems.   More infomation about CP/M and some common commands available are documented on [The CP/M Wiki article](https://en.wikipedia.org/wiki/CP/M)
 
 ## Current issue
-* Head over Heels boot screen corrupt - The game itself works fine
-* La Abadia del Crimen - Corrupt graphics
 * CP/M disk images can infrequently become corrupt - Back them up
-* CPC Paging mode not supported - I am not aware of any PCW games using it
 
 # Changes from previous release
 * Support for PCW9512+ 3.5" software
 * Dual drive support added
 * Dual bootloader to support booting all media types
 * Fixed corruption issue with RAMtest
+* Daisywheel port emulation to allow PCW915+ CPM to boot
+* CPC paging support, which fixes issues with various games
 
 ## Upcoming features
 The following features are coming shortly

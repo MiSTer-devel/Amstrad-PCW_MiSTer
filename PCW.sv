@@ -279,8 +279,8 @@ begin
 			end
 			else begin
 				loader_wr <= 1'b0;
-				loader_addr <= loader_addr + 'd1;
-				read_addr <= read_addr + 'd1;
+				loader_addr <= loader_addr + 16'd1;
+				read_addr <= read_addr + 16'd1;
 				if(read_addr >= BOOT_ROM_END)
 				begin
 					loader_download <= 1'b0;
@@ -300,7 +300,6 @@ boot_loader boot_loader
 	.data(read_data)
 );
 
-wire [1:0] density = status[16:15];
 pcw_core pcw_core
 (
 	.reset(reset),
