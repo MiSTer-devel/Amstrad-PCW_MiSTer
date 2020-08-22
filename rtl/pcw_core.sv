@@ -499,10 +499,10 @@ module pcw_core(
     always_comb
     begin
         case(cpua[15:14])
-            2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
-            2'b01: ram_b_addr = portF1[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
-            2'b10: ram_b_addr = portF2[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
-            2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memr ? cpc_read_ram_b_addr : cpc_write_ram_b_addr;
+            2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
+            2'b01: ram_b_addr = portF1[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
+            2'b10: ram_b_addr = portF2[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
+            2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
         endcase
     end
 
