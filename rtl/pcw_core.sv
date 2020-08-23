@@ -496,7 +496,7 @@ module pcw_core(
     end
 
     // Finally memory address based upon above page modes
-    always_comb
+    always @(posedge clk_sys)
     begin
         case(cpua[15:14])
             2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
