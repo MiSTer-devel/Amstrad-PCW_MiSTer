@@ -35,7 +35,7 @@ Unlike many home comptuters of the mid 80's, the Amstrad PCW always included a d
 
 The PCW also doesn't have a BOOT ROM but instead streams a small boot routine from the keyboard controller at power-up time.  The PCW core recreates this boot sequence and does not require any external ROM files to boot.  Just place your DSK images in the **/Games/Amstrad PCW/** directory in the root of the SD card.
 
-Games are usually supplied on two disks, normally the first disk is a CP/M boot disk.  Insert this boot disk into the A: drive using the Menu, then select the **RESET** option to restart and load the disk. Once the boot disk has finished booting, you will be prompted by the PCW change the disk to the second disk and press return.
+Games are usually supplied on two disks, normally the first disk is a CP/M boot disk.  Insert this boot disk into the A: drive using the Menu, then press **SPACE** to load the disk. Once the boot disk has finished booting, you will be prompted by the PCW change the disk to the second disk and press return.
 
 ![](./docs/images/change_disk.jpg)
 
@@ -50,7 +50,7 @@ The main operating system the PCW used was called CP/M which was developed by Di
 * Dual bootloader to support booting all media types
 * Fixed corruption issue with RAMtest
 * Daisywheel port emulation to allow PCW915+ CPM to boot
-* CPC paging support, which fixes issues with various games
+* CPC paging support, which fixes issues with various games (e.g. Abadia, Head over Heels)
 
 ## Upcoming features
 The following features are coming shortly

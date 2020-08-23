@@ -298,11 +298,11 @@ module pcw_core(
     begin
         if(reset)
         begin
-            portF0 <= 8'h00;
-            portF1 <= 8'h00;
-            portF2 <= 8'h00;
-            portF3 <= 8'h00;
-            portF4 <= 8'h00;
+            portF0 <= 8'h80;
+            portF1 <= 8'h81;
+            portF2 <= 8'h82;
+            portF3 <= 8'h83;
+            portF4 <= 8'hf1;
             portF5 <= 8'h00;
             portF6 <= 8'h00;
             portF7 <= 8'h80;
@@ -496,7 +496,7 @@ module pcw_core(
     end
 
     // Finally memory address based upon above page modes
-    always @(posedge clk_sys)
+    always_comb
     begin
         case(cpua[15:14])
             2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 

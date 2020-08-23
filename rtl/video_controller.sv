@@ -87,27 +87,6 @@ module video_controller(
         .o_timer(timer_int)
     );
 
-    // Setup roller ram display list pointer at end of last frame 
-    // This is a pointer to the first entry in roller ram
-    logic [16:0] roller_addr = 17'd0;
-    logic old_start = 1'b0;
-    always @ (posedge clk_sys)
-    begin
-        if(ce_pix)
-        begin
-            old_start <= screen_start;
-            // Going from Screen end to Screen start
-            if(~old_start & screen_start) begin     
-                roller_addr <= {roller_ptr[7:0],9'b0};
-            end
-        end
-    end
-
-    // Offset Y by Y scroll register
-    //byte unsigned yoffset /* synthesis keep */;
-    //assign yoffset = ((y + yscroll) & 8'hFF);
-    //assign roller_addr = tmp_addr + (yoffset << 1);
-
     // lookup_addr and line_addr driver
     logic [16:0] line_addr = 17'd0;
     logic [15:0] roller_bits; 
@@ -136,7 +115,7 @@ module video_controller(
                     roller_state <= GET_LSB;
                     video_lookup <= 1'b1;
                     // Read MSB of address
-                    lookup_addr <= roller_addr + (((y + yscroll) & 8'hff) << 1);
+                    lookup_addr <= {roller_ptr[7:0],9'b0} + (((y + yscroll) & 8'hff) << 1);
                 end else begin
                     case(roller_state)
                         IDLE: begin
@@ -147,7 +126,7 @@ module video_controller(
                         GET_LSB: begin
                             video_lookup <= 1'b1;
                             // Read LSB of address
-                            lookup_addr <= roller_addr + (((y + yscroll) & 8'hff) << 1) + 17'd1;
+                            lookup_addr <= {roller_ptr[7:0],9'b0} + (((y + yscroll) & 8'hff) << 1) + 1;
                             // din should equal LSB from previous step
                             roller_bits[7:0] <= din;
                             roller_state <= GET_MSB;
@@ -174,7 +153,7 @@ module video_controller(
 
     // Pixel memory lookup address controller
     logic [16:0] pixel_addr /* synthesis keep */;
-    assign pixel_addr = active ? line_addr + (x[10:3] << 3 ) : 17'd0;
+    assign pixel_addr = active ? line_addr + (x[10:3] << 3 ) : 'b0;
 
     // Address controller for vid_addr
     assign vid_addr = video_lookup ? lookup_addr : pixel_addr;
