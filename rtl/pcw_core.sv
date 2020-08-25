@@ -119,6 +119,7 @@ module pcw_core(
     logic cpuclk, cpuclk_r;
     logic romrd,ramrd,ramwr;
     logic ior,iow,memr,memw;
+//    logic waitio = 1'b0;
 
     logic [3:0] rgbi;
 
@@ -220,6 +221,7 @@ module pcw_core(
         .CEN_p(GCLK),
         .CEN_n(1'b1),
         .M1_n(cpum1),
+//        .WAIT_n(~waitio),
         .MREQ_n(cpumreq),
         .IORQ_n(cpuiorq),
         .NMI_n(nmi_sig),
@@ -257,33 +259,33 @@ module pcw_core(
     begin
         if(~ior)
         begin
-				if(cpua[15:0]==16'h01fc) cpudi = model ? daisy_dout : 8'hff; 
-				else begin		
-					casez(cpua[7:0])
-						 8'hf8: cpudi = portF8;
-						 8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
-						 8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
-						 8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
-						 8'he0: begin                // Joystick or CPS
-							  case(joy_type)
-									JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
-									JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
-									default: cpudi = 8'h00;       // Dart and CPS
-							  endcase
-						 end
-						 // Kempston Mouse
-						 8'b110100??, 8'hd4: cpudi = kempston_dout;
-						 // AMX Mouse
-						 8'b10?000??: cpudi = amx_dout;
-						 // DK Tronics sound and joystick controller
-						 8'ha9: cpudi = dk_out;      
-						 // Kempston Joystick
-						 8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
-						 // Floppy controller
-						 8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
-						 default: cpudi = 8'hff;             
-					endcase
-				end
+            if(cpua[15:0]==16'h01fc) cpudi = model ? daisy_dout : 8'hff; 
+            else begin		
+                casez(cpua[7:0])
+                        8'hf8: cpudi = portF8;
+                        8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
+                        8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
+                        8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
+                        8'he0: begin                // Joystick or CPS
+                            case(joy_type)
+                                JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
+                                JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
+                                default: cpudi = 8'h00;       // Dart and CPS
+                            endcase
+                        end
+                        // Kempston Mouse
+                        8'b110100??, 8'hd4: cpudi = kempston_dout;
+                        // AMX Mouse
+                        8'b10?000??: cpudi = amx_dout;
+                        // DK Tronics sound and joystick controller
+                        8'ha9: cpudi = dk_out;      
+                        // Kempston Joystick
+                        8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
+                        // Floppy controller
+                        8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
+                        default: cpudi = 8'hff;             
+                endcase
+            end
         end
         else begin
             cpudi = kbd_sel ? kbd_data : ram_b_dout;
@@ -355,6 +357,18 @@ module pcw_core(
             //if(img_mounted) motor <= 0; // Reset on new image mounted
         end
     end
+
+    // logic old_GCLK, old_ior;
+    // always @(posedge clk_sys)
+    // begin
+    //     old_GCLK <= GCLK;
+    //     if(~old_GCLK & GCLK)
+    //     begin
+    //         old_ior <= ior;
+    //         if(old_ior & ~ior & (cpua[7:0]==8'h00 || cpua[7:0]==8'h01)) waitio <= 1'b1;
+    //         else waitio <= 1'b0;
+    //     end
+    // end
 
     // detect fdc interrupt edge
     logic fdc_pe, fdc_ne;
@@ -519,7 +533,7 @@ module pcw_core(
 
         // Port B - used for CPU and download access
         .b_clk(clk_sys),
-        .b_wr(dn_go ? dn_wr : ~memw & GCLK),
+        .b_wr(dn_go ? dn_wr : ~memw),
         .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr),
         .b_din(dn_go ? dn_data : cpudo),
         .b_dout(ram_b_dout)

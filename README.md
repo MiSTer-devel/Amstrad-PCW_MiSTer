@@ -35,7 +35,7 @@ Unlike many home comptuters of the mid 80's, the Amstrad PCW always included a d
 
 The PCW also doesn't have a BOOT ROM but instead streams a small boot routine from the keyboard controller at power-up time.  The PCW core recreates this boot sequence and does not require any external ROM files to boot.  Just place your DSK images in the **/Games/Amstrad PCW/** directory in the root of the SD card.
 
-Games are usually supplied on two disks, normally the first disk is a CP/M boot disk.  Insert this boot disk into the A: drive using the Menu, then press **SPACE** to load the disk. Once the boot disk has finished booting, you will be prompted by the PCW change the disk to the second disk and press return.
+Games are usually supplied on two disks, normally the first disk is a CP/M boot disk.  Insert this boot disk into the A: drive using the Menu, then select **RESET** from the OSD menu to load the disk. Once the boot disk has finished booting, you will be prompted by the PCW change the disk to the second disk and press return.
 
 ![](./docs/images/change_disk.jpg)
 

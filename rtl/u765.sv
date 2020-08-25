@@ -71,7 +71,6 @@ localparam OVERRUN_TIMEOUT = CYCLES * 10'd100;		// 13us seconds assuming base cl
 // Sector time - We are going to fix this to 9 sectors per track for PCW
 localparam SECTOR_TIME = ((CYCLES * 20'd200) / 20'd9) / 20'd4;  // SECTOR time for timing of disk speed.
 
-localparam DATA_END_DELAY = 64;	// How many delay cycles to wait when data transfer ends
 localparam UPD765_MAIN_D0B = 0;
 localparam UPD765_MAIN_D1B = 1;
 localparam UPD765_MAIN_D2B = 2;
@@ -226,13 +225,12 @@ logic [7:0] i_total_sectors;
 
 phase_t phase;
 
-logic  [7:0] m_status;  //main status register
-logic  [7:0] m_data;    //data register
-logic int_state[2];	// interrupt states for both drives
+reg  [7:0] m_status;  //main status register
+reg  [7:0] m_data;    //data register
+reg int_state[2];	// interrupt states for both drives
 
 logic ndma_mode = 1'b1;
 state_t last_state/* synthesis noprune */;
-logic [9:0] data_end_delay = 'd0;
 
 assign int_out = int_state[0] | int_state[1];
 assign dout = a0 ? m_data : m_status;
@@ -920,7 +918,7 @@ always @(posedge clk_sys) begin
 				//Read from/write to Speccy
 				COMMAND_RW_DATA_EXEC6:
 				if (~sd_busy & ~buff_wait) begin
-					if (!i_bytes_to_read && !data_end_delay) begin
+					if (!i_bytes_to_read) begin
 						//end of the current sector in buffer, so write it to SD card
 						if (i_write && buff_addr && i_seek_pos < image_size[ds0]) begin
 							sd_lba <= i_seek_pos[31:9];
@@ -928,24 +926,7 @@ always @(posedge clk_sys) begin
 							sd_busy <= 1;
 						end
 						state <= COMMAND_RW_DATA_EXEC8;
-						//i_rpm_timer[ds0][hds] <= (SECTOR_TIME-(SECTOR_TIME >> 2));	
-					// 	data_end_delay <= DATA_END_DELAY;
-					// end else if(data_end_delay) begin	// Delay a number of CPU cycles to allow TC to go high
-					// 	data_end_delay <= data_end_delay - 'd1;
-					// 	if(data_end_delay == 'd1)
-					// 	begin
-					// 		state <= COMMAND_RW_DATA_EXEC8;
-					// 		i_rpm_timer[ds0][hds] <= (SECTOR_TIME-(SECTOR_TIME >> 2));					
-					// 	end
-/* 					end else if (!i_timeout) begin
-						m_status[UPD765_MAIN_EXM] <= 0;
-						status[0] <= 8'h40;
-						status[1] <= 8'h10; //overrun
-						status[2] <= i_sector_st2 | (i_rw_deleted ? 8'h40 : 8'h0);
-						state <= COMMAND_READ_RESULTS;
-						int_state[ds0] <= 1'b1;
-						phase <= PHASE_RESPONSE;
- */					end else if (~m_status[UPD765_MAIN_RQM]) begin
+					end else if (~m_status[UPD765_MAIN_RQM]) begin
 						m_status[UPD765_MAIN_RQM] <= 1;	
 						if(ndma_mode) int_state[ds0] <= 1'b1;
 					end else if (~i_write & ~old_rd & rd & a0) begin
@@ -955,20 +936,17 @@ always @(posedge clk_sys) begin
 						end
 						//Speedlock: fuzz 'weak' sectors last bytes
 						//weak sector is cyl 0, head 0, sector 2
-						m_data <= (SPECCY_SPEEDLOCK_HACK &
-									i_current_sector == 2 & !pcn[ds0] & ~hds &
-									i_sector_st1[5] & i_sector_st2[5] & !i_bytes_to_read[14:4]) ?
-								buff_data_in << next_weak_sector[ds0] : buff_data_in;
+						m_data <= buff_data_in;
 
-					m_status[UPD765_MAIN_RQM] <= 0;
-					if (i_sector_size) begin
-						i_sector_size <= i_sector_size - 1'd1;
-						buff_addr <= buff_addr + 1'd1;
-						buff_wait <= 1;
-						i_seek_pos <= i_seek_pos + 1'd1;
-					end
-					i_bytes_to_read <= i_bytes_to_read - 1'd1;
-					i_timeout <= OVERRUN_TIMEOUT;
+						m_status[UPD765_MAIN_RQM] <= 0;
+						if (i_sector_size) begin
+							i_sector_size <= i_sector_size - 1'd1;
+							buff_addr <= buff_addr + 1'd1;
+							buff_wait <= 1;
+							i_seek_pos <= i_seek_pos + 1'd1;
+						end
+						i_bytes_to_read <= i_bytes_to_read - 1'd1;
+						i_timeout <= OVERRUN_TIMEOUT;
 						if(ndma_mode) int_state[ds0] <= 1'b0;
 					end else if (i_write & ~old_wr & wr & a0) begin
 						buff_wr <= 1;
@@ -1194,51 +1172,53 @@ always @(posedge clk_sys) begin
 				COMMAND_READ_RESULTS:
 				begin
 					phase <= PHASE_RESPONSE;
-					m_status[UPD765_MAIN_RQM] <= 1;
 					m_status[UPD765_MAIN_DIO] <= 1;
+					if (~sd_busy & ~buff_wait) begin
+						m_status[UPD765_MAIN_RQM] <= 1;
+						if (~old_rd & rd & a0) begin
+							//m_status[UPD765_MAIN_RQM] <= 0;	// toggle request line for one period to generate interrupt
+							case (i_substate)
+								0: begin
+										//if(read_or_write) int_state[ds0] = 1'b1;
+										m_data <= {status[0][7:3], hds, 1'b0, ds0 }; // status[0][7:3]
+										i_substate <= 1;
+										int_state[ds0] <= 1'b0; 
+									end
+								1: begin
+										m_data <= status[1];
+										i_substate <= 2;
+									end
+								2: begin
+										m_data <= status[2];
+										i_substate <= 3;
+									end
+								3: begin
+										// Changes based on if TC issued and last sector
+										//if(tc && i_sector_r == i_current_track_sectors[ds0][hds]) m_data <= i_sector_c + 8'd1; 
+										//else m_data <= i_sector_c;
+										m_data <= i_sector_c;
+										i_substate <= 4;
+									end
+								4: begin
+										m_data <= i_sector_h;
+										i_substate <= 5;
+									end
+								5: begin
+										// Changes based on if TC issued and last sector
+										//if(tc && i_sector_r == i_current_track_sectors[ds0][hds]) m_data <= 8'd1;
+										//else m_data <= tc ? i_sector_r + 8'd1 : i_sector_r;
+										m_data <= i_sector_r; //i_eot + 8'd1;
+										i_substate <= 6;
+									end
+								6: begin
+										m_data <= i_sector_n;
+										state <= COMMAND_IDLE;
+									end
+								7: ;//not happen
+							endcase
+						end
+					end else m_status[UPD765_MAIN_RQM] <= 0;
 
-					if (~old_rd & rd & a0) begin
-						//m_status[UPD765_MAIN_RQM] <= 0;	// toggle request line for one period to generate interrupt
-						case (i_substate)
-							0: begin
-									//if(read_or_write) int_state[ds0] = 1'b1;
-									m_data <= {status[0][7:3], hds, 1'b0, ds0 }; // status[0][7:3]
-									i_substate <= 1;
-									int_state[ds0] <= 1'b0; 
-								end
-							1: begin
-									m_data <= status[1];
-									i_substate <= 2;
-								end
-							2: begin
-									m_data <= status[2];
-									i_substate <= 3;
-								end
-							3: begin
-									// Changes based on if TC issued and last sector
-									//if(tc && i_sector_r == i_current_track_sectors[ds0][hds]) m_data <= i_sector_c + 8'd1; 
-									//else m_data <= i_sector_c;
-									m_data <= i_sector_c;
-									i_substate <= 4;
-								end
-							4: begin
-									m_data <= i_sector_h;
-									i_substate <= 5;
-								end
-							5: begin
-									// Changes based on if TC issued and last sector
-									//if(tc && i_sector_r == i_current_track_sectors[ds0][hds]) m_data <= 8'd1;
-									//else m_data <= tc ? i_sector_r + 8'd1 : i_sector_r;
-									m_data <= i_sector_r; //i_eot + 8'd1;
-									i_substate <= 6;
-								end
-							6: begin
-									m_data <= i_sector_n;
-									state <= COMMAND_IDLE;
-								end
-							7: ;//not happen
-						endcase
-					end
 				end
 
 				COMMAND_INVALID:
