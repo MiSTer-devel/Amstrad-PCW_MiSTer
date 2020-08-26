@@ -154,7 +154,7 @@ module pcw_core(
             2'b00: {disk_clk, dcnt} <= dcnt + 16'h1000;  // 1x4Mhz - divide by 16: (2^16)/16   = 0x1000
             2'b01: {disk_clk, dcnt} <= dcnt + 16'h2000;  // 2x4Mhz - divide by  8: (2^16)/8    = 0x2000
             2'b10: {disk_clk, dcnt} <= dcnt + 16'h4000;  // 4x4Mhz - divide by  4: (2^16)/4    = 0x4000
-            2'b11: {disk_clk, dcnt} <= dcnt + 16'h4000;  // 8x4Mhz - divide by  4: (2^16)/2    = 0x4000
+            2'b11: {disk_clk, dcnt} <= dcnt + 16'h8000;  // 8x4Mhz - divide by  4: (2^16)/2    = 0x4000
         endcase
     end    
 
@@ -459,7 +459,7 @@ module pcw_core(
 	logic nmi_sig/* synthesis keep */, int_sig/* synthesis keep */;
     assign nmi_sig = ~nmi_line;
     // Disk int and timer int combined
-    assign int_sig = ~int_line & ~timer_line;
+    assign int_sig = nmi_line ? 1'b1 : (~int_line & ~timer_line);   // Don't fire if NMI outstanding
 
     // Video control registers
     logic [7:0] roller_ptr;

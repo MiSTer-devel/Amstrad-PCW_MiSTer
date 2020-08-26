@@ -42,11 +42,14 @@ Games are usually supplied on two disks, normally the first disk is a CP/M boot 
 The main operating system the PCW used was called CP/M which was developed by Digital Research and was one of the worlds first cross platform operating systems.   More infomation about CP/M and some common commands available are documented on [The CP/M Wiki article](https://en.wikipedia.org/wiki/CP/M)
 
 ## Current issue
-* CP/M disk images can infrequently become corrupt - Back them up
+* SymbOS does not work correctly
+* Mouse movements can be eratic
+* PSI-5 Doesn't loat
 
 # Changes from previous release
 * Support for PCW9512+ 3.5" software
 * Dual drive support added
+* Fixed issues with disk corruption and boot errors
 * Dual bootloader to support booting all media types
 * Fixed corruption issue with RAMtest
 * Daisywheel port emulation to allow PCW915+ CPM to boot

@@ -905,7 +905,7 @@ always @(posedge clk_sys) begin
 
 				//Read the LBA for the sector into the RAM
 				COMMAND_RW_DATA_EXEC5:
-				if (~sd_busy) begin
+				if (~sd_busy & ~buff_wait) begin
 					sd_buff_type <= UPD765_SD_BUFF_SECTOR;
 					sd_rd[ds0] <= 1;
 					sd_lba <= i_seek_pos[31:9];
