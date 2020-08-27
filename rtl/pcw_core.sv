@@ -58,6 +58,21 @@ module pcw_core(
     input wire [1:0] overclock,
     input wire ntsc,
     input wire model,
+    input wire [1:0] memory_size,
+
+    // SDRAM signals
+	output        SDRAM_CLK,
+	output        SDRAM_CKE,
+	output [12:0] SDRAM_A,
+	output  [1:0] SDRAM_BA,
+	inout  [15:0] SDRAM_DQ,
+	output        SDRAM_DQML,
+	output        SDRAM_DQMH,
+	output        SDRAM_nCS,
+	output        SDRAM_nCAS,
+	output        SDRAM_nRAS,
+	output        SDRAM_nWE,
+    input         locked,
 
     input wire dn_clk,
     input wire dn_go,
@@ -98,6 +113,12 @@ module pcw_core(
     localparam MODEL_8512 = 0;
     localparam MODEL_9512 = 1;
 
+    localparam MEM_256K = 0;
+    localparam MEM_512K = 1;
+    localparam MEM_1M = 2;
+    localparam MEM_2M = 3;
+
+
     // Audio channels
     logic [7:0] ch_a;
     logic [7:0] ch_b;
@@ -107,7 +128,7 @@ module pcw_core(
 
     // dpram addressing
     logic [16:0] ram_a_addr;
-    logic [17:0] ram_b_addr/* synthesis keep */;
+    logic [20:0] ram_b_addr/* synthesis keep */;
     logic [7:0] ram_a_dout;
     logic [7:0] ram_b_dout/* synthesis keep */;
     
@@ -158,12 +179,12 @@ module pcw_core(
         endcase
     end    
 
-    // Generate 4mhz clock for ay-3-8912 sound
+    // Generate 1mhz clock for ay-3-8912 sound
     reg [15:0] scnt;
     logic snd_clk;
     always @(posedge clk_sys)
     begin
-        {snd_clk, scnt} <= scnt + 16'h1000;  // 1x4Mhz - divide by 16: (2^16)/16   = 0x1000
+        {snd_clk, scnt} <= scnt + 16'h0400;  // divide by 64 = 1Mhz
     end 
 
     // Gated clock which can be disabled during ROM download
@@ -209,11 +230,11 @@ module pcw_core(
     assign memr = cpurd | cpumreq;
     assign memw = cpuwr | cpumreq;
     logic kbd_sel/* synthesis keep */;
-    assign kbd_sel = ram_b_addr[17:4]==14'b00111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
-    assign LED = kbd_sel;
+    assign kbd_sel = ram_b_addr[20:4]==17'b00000111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
     logic daisy_sel;
     assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) && (~ior | ~iow)? 1'b1 : 1'b0;
 
+    wire WAIT_n = sdram_access ? ram_ready : 1'b1;
     // Create processor instance
     T80pa cpu(
        	.RESET_n(~reset),
@@ -221,7 +242,7 @@ module pcw_core(
         .CEN_p(GCLK),
         .CEN_n(1'b1),
         .M1_n(cpum1),
-//        .WAIT_n(~waitio),
+        .WAIT_n(WAIT_n),
         .MREQ_n(cpumreq),
         .IORQ_n(cpuiorq),
         .NMI_n(nmi_sig),
@@ -472,18 +493,50 @@ module pcw_core(
     assign disable_vid = ~portF7[6]; // & ~portF8[3];
 
     // Ram B address for various paging modes
-    logic [17:0] pcw_ram_b_addr/* synthesis keep */;
+    logic [20:0] pcw_ram_b_addr/* synthesis keep */;
     logic [17:0] cpc_read_ram_b_addr/* synthesis keep */;
     logic [17:0] cpc_write_ram_b_addr/* synthesis keep */;
+
+    // Memory size adjusted ports
+    logic [6:0] mportF0,mportF1,mportF2,mportF3;
+    always_comb
+    begin 
+        case(memory_size)
+            MEM_256K: begin
+                mportF0 = {3'b0,portF0[3:0]};
+                mportF1 = {3'b0,portF1[3:0]};
+                mportF2 = {3'b0,portF2[3:0]};
+                mportF3 = {3'b0,portF3[3:0]};
+            end
+            MEM_512K: begin
+                mportF0 = {2'b0,portF0[4:0]};
+                mportF1 = {2'b0,portF1[4:0]};
+                mportF2 = {2'b0,portF2[4:0]};
+                mportF3 = {2'b0,portF3[4:0]};
+            end
+            MEM_1M: begin
+                mportF0 = {1'b0,portF0[5:0]};
+                mportF1 = {1'b0,portF1[5:0]};
+                mportF2 = {1'b0,portF2[5:0]};
+                mportF3 = {1'b0,portF3[5:0]};
+            end
+            MEM_2M: begin
+                mportF0 = portF0[6:0];
+                mportF1 = portF1[6:0];
+                mportF2 = portF2[6:0];
+                mportF3 = portF3[6:0];
+            end
+       endcase
+    end
 
     // PCW Paged memory support for read and writes
     always_comb
     begin
         case(cpua[15:14])
-            2'b00: pcw_ram_b_addr = {portF0[3:0],cpua[13:0]};
-            2'b01: pcw_ram_b_addr = {portF1[3:0],cpua[13:0]};
-            2'b10: pcw_ram_b_addr = {portF2[3:0],cpua[13:0]};
-            2'b11: pcw_ram_b_addr = {portF3[3:0],cpua[13:0]};
+            2'b00: pcw_ram_b_addr = {mportF0,cpua[13:0]};
+            2'b01: pcw_ram_b_addr = {mportF1,cpua[13:0]};
+            2'b10: pcw_ram_b_addr = {mportF2,cpua[13:0]};
+            2'b11: pcw_ram_b_addr = {mportF3,cpua[13:0]};
         endcase
     end
 
@@ -513,16 +566,17 @@ module pcw_core(
     always_comb
     begin
         case(cpua[15:14])
-            2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
-            2'b01: ram_b_addr = portF1[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
-            2'b10: ram_b_addr = portF2[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
-            2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memw ? cpc_write_ram_b_addr : cpc_read_ram_b_addr; 
+            2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
+            2'b01: ram_b_addr = portF1[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
+            2'b10: ram_b_addr = portF2[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
+            2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
         endcase
     end
 
     // DPRAM - Only support 256K of memory while using dpram
     // Addresses are made up of 4 bits of page number and 14 bits of offset
-    // Port A is used for display memory access.  Can only access 128k
+    // Port A is used for display memory access but can only access 128k
+    logic [7:0] dpram_b_dout;
     dpram #(.DATA(8), .ADDR(18)) main_mem(
         // Port A is used for display memory access
         .a_clk(clk_sys),
@@ -533,11 +587,30 @@ module pcw_core(
 
         // Port B - used for CPU and download access
         .b_clk(clk_sys),
-        .b_wr(dn_go ? dn_wr : ~memw),
-        .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr),
+        .b_wr(dn_go ? dn_wr : ~memw & ~|ram_b_addr[20:18]),
+        .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr[17:0]),
         .b_din(dn_go ? dn_data : cpudo),
-        .b_dout(ram_b_dout)
+        .b_dout(dpram_b_dout)
     );
+
+    logic ram_ready;
+    logic [7:0] sdram_b_dout;
+    // Extended SDRAM for memory above 256K.  2MB in size, but first 256K will not be used
+    sdram sdram
+    (
+        .*,
+        .init(~locked),
+        .clk(clk_sys),
+        .dout(sdram_b_dout),
+        .din (cpudo),
+        .addr(ram_b_addr),
+        .we(~memw & sdram_access), 
+        .rd(~memr & sdram_access),
+        .ready(ram_ready)
+    );
+
+    wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+    assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
     // Video output controller
     video_controller video(
@@ -681,8 +754,8 @@ module pcw_core(
 
         .BDIR(dk_busdir),
         .BC(dk_bc),
-        .SEL(1'b1),
-        .MODE(1'b1),
+        .SEL(1'b0),
+        .MODE(1'b0),
 
         .CHANNEL_A(ch_a),
         .CHANNEL_B(ch_b),
@@ -736,6 +809,7 @@ module pcw_core(
         .int_out(fdc_int),
         .tc(tc),
         .density(density),
+        .activity_led(LED),
 
         .img_mounted(img_mounted),
         .img_size(img_size[31:0]),
@@ -749,24 +823,6 @@ module pcw_core(
         .sd_buff_din(sd_buff_din),
         .sd_buff_wr(sd_dout_strobe)
     );
-
-    /* - Consider for future support of CPC mode
-    typedef struct packed
-    {
-        logic b7;
-        logic [6:0] block_num;
-    } pcw_mode_t;
-
-    typedef struct packed
-    {
-        logic b7;
-        logic [2:0] block_rd;
-        logic b3;
-        logic [2:0] block_wr;
-    } cpc_mode_t;
-
-    pcw_mode_t pcw_mode;
-    cpc_mode_t cpc_mode; */
 
 endmodule
 

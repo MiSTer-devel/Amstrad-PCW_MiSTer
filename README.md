@@ -41,24 +41,35 @@ Games are usually supplied on two disks, normally the first disk is a CP/M boot 
 
 The main operating system the PCW used was called CP/M which was developed by Digital Research and was one of the worlds first cross platform operating systems.   More infomation about CP/M and some common commands available are documented on [The CP/M Wiki article](https://en.wikipedia.org/wiki/CP/M)
 
+## PCW Models
+
+The PCW core emulates two different models of the PCW:
+* **PCW8256/8512** - Drive A 3" 180k (CF2), Drive B 3" 720k (CF2DD)
+* **PCW9256/9512+** - Both drives 3.5" 720k
+
+These two different models of the PCW require different boot disks.  This is because each model has a different bootrom, which looks for different checksums on the boot sectors.
+
 ## Current issue
 * SymbOS does not work correctly
 * Mouse movements can be eratic
-* PSI-5 Doesn't loat
+* PSI-5 Trading Company - Requires SCAN_EQUAL disk command which is not implemented
 
 # Changes from previous release
-* Support for PCW9512+ 3.5" software
-* Dual drive support added
+* Support for PCW9512+ Mode and 3.5" drives
+* Support for two disk drives
+* SDRAM support to provide upto 2MB memory
 * Fixed issues with disk corruption and boot errors
-* Dual bootloader to support booting all media types
 * Fixed corruption issue with RAMtest
 * Daisywheel port emulation to allow PCW915+ CPM to boot
-* CPC paging support, which fixes issues with various games (e.g. Abadia, Head over Heels)
+* CPC paging mode. Fixes issues with various games (e.g. Abadia, Head over Heels)
 
 ## Upcoming features
 The following features are coming shortly
-* 2MB memory support using SDRAM
-* 2 Disk Drives
+* Support for SymbOS
+* Mouse movement improvements
+
+## Game Notes
+* Blagger - Will move left unless Joystick is set to Cascade
 
 ## Thanks
 Special thanks to the following people:

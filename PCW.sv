@@ -145,7 +145,10 @@ localparam CONF_STR = {
 	"S0,DSK,Mount A:;",
 	"S1,DSK,Mount B:;",
 	"-;",
-	"O4,System,8256/8512,9512+;",
+	"O4,System Model,8256/8512,9256/9512+;",
+	"OFG,Memory Size,256K,512K,1MB,2MB;",
+	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
+	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
@@ -153,19 +156,20 @@ localparam CONF_STR = {
 //	"O4,Kbd Layout,PCW,PC;",
 	"OAC,Joystick Type,None,Kempston,Spectravideo,Cascade,DKTronics;",
 	"ODE,Mouse Type,None,AMX,Kempston,Keymouse;",
-	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
 	"-;",
 	"R0,Reset;",
 	"J,Fire 1,Fire 2;",
 	"V,v",`BUILD_DATE
 };
 
+logic locked;
 (* preserve *) wire clk_sys;
 pll pll
 (
 	.refclk   (CLK_50M),
 	.rst      (0),
-	.outclk_0 (clk_sys) // 32 MHz
+	.outclk_0 (clk_sys), // 32 MHz
+	.locked	  (locked)
 );
 
 wire [31:0] status;
@@ -326,6 +330,7 @@ pcw_core pcw_core
 	.ntsc(status[7]),
 	.overclock(status[9:8]),
 	.model(status[4]),
+	.memory_size(status[16:15]),
 
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
@@ -348,7 +353,10 @@ pcw_core pcw_core
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din),
-	.sd_dout_strobe(sd_buff_wr)	
+	.sd_dout_strobe(sd_buff_wr),
+	// SD RAM signals not explicitly named
+	.locked(locked),
+	.*	
 );
 
 ///////////////////////////////////////////////////

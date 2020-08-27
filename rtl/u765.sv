@@ -49,6 +49,7 @@ module u765 #(parameter CYCLES = 20'd4000, SPECCY_SPEEDLOCK_HACK = 0)
 	input wire		 tc,		// terminal count (terminate)
 	output logic     int_out,   // Output interrupt line
 	input wire [1:0] density,	// CF2 = 0, CF2DD = 1
+	output logic 	 activity_led,	// Activity LED
 
 	input wire  [1:0] img_mounted, // signaling that new image has been mounted
 	input wire        img_wp,      // write protect. latched at img_mounted
