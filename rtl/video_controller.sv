@@ -74,7 +74,7 @@ module video_controller(
         .i_clk(clk_sys),
         .i_pix_stb(pix_stb),
         .i_rst(reset),
-        .ntsc(ntsc),
+        .i_ntsc(ntsc),
         .o_hs(hsync), 
         .o_vs(vsync), 
         .o_hblank(hb), 

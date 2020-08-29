@@ -570,7 +570,7 @@ always @(posedge clk_sys) begin
 						state <= COMMAND_SENSE_DRIVE_STATUS_RD;
 						m_status[UPD765_MAIN_DIO] <= 1;
 						ds0 <= din[0];
-						hds <= din[2];	// Was missing
+						hds <= image_density[din[0]] ? din[2] : 1'b0;	// Was missing
 					end
 				end
 
@@ -619,7 +619,7 @@ always @(posedge clk_sys) begin
 				begin
 					if (~old_wr & wr & a0) begin
 						ds0 <= din[0];
-						hds <= din[2];	// Was missing
+						hds <= image_density[din[0]] ? din[2] : 1'b0;	// Was missing
 						int_state[din[0]] <= 0;
 						state <= COMMAND_SEEK_EXEC1;
 					end
@@ -674,7 +674,7 @@ always @(posedge clk_sys) begin
 						int_state[din[0]] <= 1'b1;
 						phase <= PHASE_RESPONSE;
 					end else begin
-						hds <= din[2];
+						hds <= image_density[din[0]] ? din[2] : 1'b0;
 						m_status[UPD765_MAIN_RQM] <= 0;
 						i_command <= COMMAND_READ_ID2;
 						state <= COMMAND_RELOAD_TRACKINFO;
@@ -1074,7 +1074,7 @@ always @(posedge clk_sys) begin
 
 				COMMAND_FORMAT_TRACK6:
 				if (~old_wr & wr & a0) begin
-					i_h <= din;
+					i_h <= image_density[ds0] ? din : 8'b0;
 					state <= COMMAND_FORMAT_TRACK7;
 				end
 
@@ -1121,7 +1121,7 @@ always @(posedge clk_sys) begin
 					case (i_substate)
 						0: begin
 								ds0 <= din[0];		// device
-								hds <= din[2];		// head polarity
+								hds <= image_density[din[0]] ? din[2] : 1'b0;		// head polarity
 								i_substate <= 1;
 							end
 						1: begin
@@ -1129,7 +1129,7 @@ always @(posedge clk_sys) begin
 								i_substate <= 2;
 							end
 						2:	begin
-								i_h <= din;			// head
+								i_h <= image_density[ds0] ? din : 8'b0;			// head
 								i_substate <= 3;
 							end
 						3: begin

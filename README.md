@@ -45,7 +45,7 @@ The main operating system the PCW used was called CP/M which was developed by Di
 
 The PCW core emulates two different models of the PCW:
 * **PCW8256/8512** - Drive A 3" 180k (CF2), Drive B 3" 720k (CF2DD)
-* **PCW9256/9512+** - Both drives 3.5" 720k
+* **PCW9256/9512+** - Both drives 3.5" 720k (MF2DD)
 
 These two different models of the PCW require different boot disks.  This is because each model has a different bootrom, which looks for different checksums on the boot sectors.
 

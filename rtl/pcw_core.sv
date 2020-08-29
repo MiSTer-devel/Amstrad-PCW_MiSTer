@@ -59,6 +59,8 @@ module pcw_core(
     input wire ntsc,
     input wire model,
     input wire [1:0] memory_size,
+    input wire dktronics,
+    input wire fake_colour,
 
     // SDRAM signals
 	output        SDRAM_CLK,
@@ -299,7 +301,7 @@ module pcw_core(
                         // AMX Mouse
                         8'b10?000??: cpudi = amx_dout;
                         // DK Tronics sound and joystick controller
-                        8'ha9: cpudi = dk_out;      
+                        8'ha9: cpudi = dktronics ? dk_out : 8'hff;
                         // Kempston Joystick
                         8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
                         // Floppy controller
@@ -763,7 +765,7 @@ module pcw_core(
 
         .IOA_in(dkjoy_io),
 
-        .CE(snd_clk),
+        .CE(snd_clk & dktronics),
         .RESET(reset),
         .CLK(clk_sys)
     ); 
