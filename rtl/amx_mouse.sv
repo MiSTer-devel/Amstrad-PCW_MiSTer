@@ -58,11 +58,11 @@ module amx_mouse
 reg [7:0] data;
 assign dout = sel ? data : 8'hff;
 
-wire signed [5:0] dxt = mouse_x / 6'd8;
-wire signed [5:0] dyt = mouse_y / 6'd8;
+wire signed [8:0] dxt = mouse_x / 9'sd8;
+wire signed [8:0] dyt = mouse_y / 9'sd8;
 
-wire signed [3:0] dx = (dxt > 7) ? 4'd7 : (dxt < -8) ? -4'd8 : dxt[3:0];
-wire signed [3:0] dy = (dyt > 7) ? 4'd7 : (dyt < -8) ? -4'd8 : dyt[3:0];
+wire signed [3:0] dx = (dxt > 9'sd7) ? 4'sd7 : dxt < 9'(-8) ? 4'(-8) : 4'(dxt[3:0]);
+wire signed [3:0] dy = (dyt > 9'sd7) ? 4'sd7 : dyt < 9'(-8) ? 4'(-8) : 4'(dyt[3:0]);
 
 always @(posedge clk_sys)
 begin
@@ -75,7 +75,7 @@ begin
             2'b00: data <= (dy < 0) ? {(~dy + 1'd1),4'b0} : {4'b0,dy};
             2'b01: data <= (dx >= 0) ? {4'b0,dx} : {(~dx + 1'd1),4'b0};
             2'b10: data <= {5'b1,~mouse_right,~mouse_middle,~mouse_left};
-            2'b11: data <= 8'hff;
+            2'b11: data <= 8'h00;
     endcase
     end
 end
