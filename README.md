@@ -49,6 +49,20 @@ The PCW core emulates two different models of the PCW:
 
 These two different models of the PCW require different boot disks.  This is because each model has a different bootrom, which looks for different checksums on the boot sectors.
 
+## Fake colour mode
+
+Like the CP/M Box and Joyce emulators and a couple of add-on boards, this core now supports colour modes.  Unlike on those emulators, this does not have to encompass the entire screen, and it is configurable from software should authors of new games wish to make use of it.
+
+<img src="./docs/images/worm.jpg" alt="Gnome Ranger" width="400" height="300">
+
+Many PCW adventure games contain graphics at the top, with a text interface before.  Once Fake Colour mode is enabled, you can use the following keys to control it:
+
+* **F9** - Move colour line enable line up
+* **F10** - Move colour line enable line down
+* **F11** - Toggle full screen colour mode on/off
+
+The mode also comes with three different CGA palettes to select from.
+
 ## Current issue
 * SymbOS does not work correctly
 * Mouse movements can be eratic
@@ -58,6 +72,7 @@ These two different models of the PCW require different boot disks.  This is bec
 * Support for PCW9512+ Mode and 3.5" drives
 * Support for two disk drives
 * SDRAM support to provide upto 2MB memory
+* Colour mode with configurable starting point
 * Fixed issues with disk corruption and boot errors
 * Fixed corruption issue with RAMtest
 * Daisywheel port emulation to allow PCW915+ CPM to boot
