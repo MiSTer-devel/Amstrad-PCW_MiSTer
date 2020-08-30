@@ -43,11 +43,14 @@ module video_controller(
     input wire inverse,             // Port F7 inverse video
     input wire disable_vid,         // Port F7 / F8 video disable
     input wire ntsc,                // Port F8 NTSC video flag
+    input wire fake_colour,         // Fake colour mode enabled
+    input wire [7:0] fake_end,      // Fake colour end row
+    output logic [7:0] ypos,        // Current yposition for fake colour comparison logic
 
 	output logic [16:0] vid_addr,   // Address Bus out for reading pixel data & roller ram
 	input wire [7:0] din,           // Data in for pixel data and roller ram
 
-	output logic [3:0] rgbi,
+	output logic [1:0] colour,
 	output logic ce_pix,
 	output logic hsync,
 	output logic vsync,
@@ -87,6 +90,7 @@ module video_controller(
         .o_timer(timer_int)
     );
 
+    assign ypos = y;
     // lookup_addr and line_addr driver
     logic [16:0] line_addr = 17'd0;
     logic [15:0] roller_bits; 
@@ -160,16 +164,24 @@ module video_controller(
 
     // Pixel shift register loader
     logic [7:0] pixel_reg = 'b0;
-    logic pixel;
+    logic [1:0] pixel;
     always @ (posedge clk_sys)
     begin
         if(ce_pix)
         begin
             // Every 8 pixels load shift reg
             if(x[2:0]==3'b000 && active) pixel_reg <= din;
-            else pixel_reg <= {pixel_reg[6:0], 1'b0};   // else shift pixel register left
-            // Check for inverse video
-            pixel <= pixel_reg[7];
+             // else shift pixel register left
+            else begin
+                // Shift every other pixel in fake colour mode
+                if(fake_colour && y < fake_end) begin
+                    pixel_reg <= ~x[0] ? {pixel_reg[5:0], 2'b0} : pixel_reg;
+                end
+                // else every pixel
+                else pixel_reg <= {pixel_reg[6:0], 1'b0};  
+            end 
+            // Load pixel register
+            pixel <= (fake_colour && y < fake_end) ? pixel_reg[7:6] : {pixel_reg[7], pixel_reg[7]};
         end
     end
 
@@ -177,12 +189,12 @@ module video_controller(
     always_comb
     begin
         if(inverse) begin
-            if(!disable_vid && active) rgbi = pixel ? 4'b0000 : 4'b1000;
-            else rgbi = 4'b1000;
+            if(!disable_vid && active) colour = ~pixel;
+            else colour = 2'b11;  // Disabled inverse video 
         end    
         else begin
-            if(!disable_vid && active) rgbi = pixel ? 4'b1000 : 4'b0000;
-            else rgbi = 4'b0000;         
+            if(!disable_vid && active) colour = pixel;
+            else colour = 2'b00;     
         end
     end
     

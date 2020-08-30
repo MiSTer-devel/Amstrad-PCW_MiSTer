@@ -151,7 +151,7 @@ localparam CONF_STR = {
 	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
-	"OH,Fake Colour,Off,On;",
+	"OIJ,Fake Colour,None,Palette 1, Palette 2, Palette 3;",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 //	"O4,Kbd Layout,PCW,PC;",
@@ -334,7 +334,7 @@ pcw_core pcw_core
 	.model(status[4]),
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
-	.fake_colour(status[18]),
+	.fake_colour_mode(status[19:18]),
 
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
@@ -387,9 +387,9 @@ video_mixer #(.LINE_LENGTH(1024), .GAMMA(1)) video_mixer
 
 	.mono(0),
 
-	.R({RGB[5:0],RGB[5:4]}),
+	.B({RGB[5:0],RGB[5:4]}),
 	.G({RGB[11:6],RGB[11:10]}),
-	.B({RGB[17:12],RGB[17:16]})
+	.R({RGB[17:12],RGB[17:16]})
 );
 
 wire  [8:0] audiomix;

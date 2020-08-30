@@ -236,6 +236,7 @@ state_t last_state/* synthesis noprune */;
 assign int_out = int_state[0] | int_state[1];
 assign dout = a0 ? m_data : m_status;
 assign old_state = last_state;
+assign activity_led = (phase == PHASE_EXECUTE);
 
 always @(posedge clk_sys) begin
 

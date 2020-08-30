@@ -62,8 +62,17 @@ module key_joystick
     input wire         lk2,         // Link 2 on motherboard
     input wire         lk3,         // Link 3 on motherboard
 	input wire   [3:0] addr,		// Address lines for keyboard.  Mapped into 3FF0-3FFB in bank 3
-	output logic [7:0] key_data 	// data lines returned from scanning keyboard and joystick
+	output logic [7:0] key_data, 	// data lines returned from scanning keyboard and joystick
+	// Colour line control signals frm F9/F10/F11 keys
+	output logic 	  line_up,	
+	output logic      line_down, 
+	output logic	  toggle_full	
 );
+
+localparam REPEAT_TIME = 64000000 / 150;  // Repeat time for F9 and F10 keys (10 per second)
+logic		 up_key;
+logic		 down_key;
+integer		 repeat_count;
 
 logic  [7:0] keys[15:0];
 logic        pressed = 0;
@@ -168,6 +177,8 @@ always @(posedge clk_sys) begin
 		keys[13] <= 8'b00000000;
 		keys[14] <= 8'b00000000;
 		keys[15] <= 8'b00000000;
+		line_up <= 1'b0;
+		line_down <= 1'b0;
 	end
 
     // Keyboard processing Main
@@ -185,14 +196,25 @@ always @(posedge clk_sys) begin
 			8'h11: keys[10][7]  <= pressed; // ALT
 			8'h14: keys[10][1]  <= pressed; // CTRL (PC) -> EXTRA (PCW) 
 			8'h05: keys[0][2]   <= pressed; // F1 (PC) -> F1/F2 (PCW)
-			8'h06: keys[0][2]   <= pressed; // F2 (PC) -> F1/F2 (PCW)
+			8'h06: begin
+				keys[0][2]   <= pressed; // F2 (PC) -> F1/F2 (PCW)
+				shifted <= pressed;
+			end
 			8'h04: keys[0][0]   <= pressed; // F3 (PC) -> F3/F4 (PCW)
-			8'h0C: keys[0][0]   <= pressed; // F4 (PC) -> F3/F4 (PCW)
+			8'h0C: begin
+				keys[0][0]   <= pressed; // F4 (PC) -> F3/F4 (PCW)
+				shifted <= pressed;
+			end				
 			8'h03: keys[10][0]  <= pressed; // F5 (PC) -> F5/F6 (PCW)
-			8'h0B: keys[10][0]  <= pressed; // F6 (PC) -> F5/F6 (PCW)
+			8'h0B: begin
+				keys[10][0]  <= pressed; // F6 (PC) -> F5/F6 (PCW)
+				shifted <= pressed;
+			end				
 			8'h83: keys[10][4]  <= pressed; // F7 (PC) -> F7/F8 (PCW)
-			8'h0A: keys[10][4]  <= pressed; // F8 (PC) -> F7/F9 (PCW)
-
+			8'h0A: begin
+				keys[10][4]  <= pressed; // F8 (PC) -> F7/F9 (PCW)
+				shifted <= pressed;
+			end				
 			8'h1c : keys[8][5] <= pressed; // A
 			8'h32 : keys[6][6] <= pressed; // B
 			8'h21 : keys[7][6] <= pressed; // C
@@ -288,9 +310,6 @@ always @(posedge clk_sys) begin
             end
 			8'h79 : keys[2][7] <= pressed; // NUM [+]
 			8'h7b : keys[10][3] <= pressed; // NUM [-]
-            // Alternates on F9 / F10
-			8'h01 : keys[2][7] <= pressed;  // F9 (PC) -> NUM [+] (PCW)
-			8'h09 : keys[10][3] <= pressed; // F10 (PC) -> NUM [-] (PCW)
 
             // Deletes
 			8'h66 : keys[9][7] <= pressed; // BACKSPACE (PC) -> <-DEL (PCW)
@@ -421,7 +440,32 @@ always @(posedge clk_sys) begin
 			8'h4b : keys[15][0] <= pressed; // L
    			8'h4c : keys[15][0] <= pressed; // ;
         endcase
+		// Fake colour line control keys
+		case(code)
+			8'h01 : begin
+				up_key <= pressed;  // F9 (PC) -> move row up
+				repeat_count <= 0;
+			end
+			8'h09 : begin
+				down_key <= pressed; // F10 (PC) -> move row down
+				repeat_count <= 0;
+			end
+			8'h78 : begin
+				toggle_full <= pressed; // F11 (PC) -> toggle full
+			end			
+		endcase
 	end     // End input strobe
+
+	line_down <= 1'b0;
+	line_up <= 1'b0;
+	// Countdown timer for colour line handler
+	if(repeat_count > REPEAT_TIME && (up_key | down_key))
+	begin
+		repeat_count <= 0;
+		line_up <= up_key;
+		line_down <= down_key;
+	end
+	else if(up_key | down_key) repeat_count <= repeat_count + 1;
 
     // Special flags and signals
     // 3FFD

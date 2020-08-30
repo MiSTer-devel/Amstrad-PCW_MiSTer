@@ -60,7 +60,7 @@ module pcw_core(
     input wire model,
     input wire [1:0] memory_size,
     input wire dktronics,
-    input wire fake_colour,
+    input wire [1:0] fake_colour_mode,
 
     // SDRAM signals
 	output        SDRAM_CLK,
@@ -120,6 +120,8 @@ module pcw_core(
     localparam MEM_1M = 2;
     localparam MEM_2M = 3;
 
+    logic fake_colour;
+    assign fake_colour = (fake_colour_mode != 2'b00);
 
     // Audio channels
     logic [7:0] ch_a;
@@ -142,19 +144,6 @@ module pcw_core(
     logic cpuclk, cpuclk_r;
     logic romrd,ramrd,ramwr;
     logic ior,iow,memr,memw;
-//    logic waitio = 1'b0;
-
-    logic [3:0] rgbi;
-
-    logic [7:0] speaker = 'b0;
-    logic [17:0] rgb_white;
-    logic [17:0] rgb_green;
-    logic [17:0] rgb_amber;
-
-    logic cpu_reg_set = 1'b0;
-    logic [211:0] cpu_reg = 'b0;
-    logic [211:0] cpu_reg_out;
-    
 
     // Generate fractional CPU clock
     reg [15:0] cnt;
@@ -614,6 +603,40 @@ module pcw_core(
     wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
     assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
+    // Edge detectors for moving fake pixel line using F9 and F10 keys
+    logic line_up_pe, line_down_pe, toggle_pe;
+    edge_det line_up_edge_det(.clk_sys(clk_sys), .signal(line_up), .pos_edge(line_up_pe));
+    edge_det line_down_edge_det(.clk_sys(clk_sys), .signal(line_down), .pos_edge(line_down_pe));
+    edge_det toggle_full_edge_det(.clk_sys(clk_sys), .signal(toggle_full), .pos_edge(toggle_pe));
+    // Line position of fake colour line
+    logic [7:0] fake_end;
+        always @(posedge clk_sys)
+    begin
+        if(reset) fake_end <= 8'd0;
+        else begin
+            if(line_up_pe && fake_end > 0) fake_end <= fake_end - 8'd1;
+            if(line_down_pe && fake_end < 255) fake_end <= fake_end + 8'd1;
+            if(toggle_pe) begin
+                if(fake_end==8'd255) fake_end <= 8'd0;
+                else if(fake_end==8'd0) fake_end <= 8'd255;
+                else fake_end <= 8'd0;
+            end
+            // Writen to via a write to port FF
+            if(~iow && cpua[7:0]==8'hff) fake_end <= cpudo;
+        end
+    end
+
+    logic [1:0] colour;
+
+    logic [17:0] rgb_white;
+    logic [17:0] rgb_green;
+    logic [17:0] rgb_amber;
+
+    logic cpu_reg_set = 1'b0;
+    logic [211:0] cpu_reg = 'b0;
+    logic [211:0] cpu_reg_out;
+    logic [7:0] ypos;
+
     // Video output controller
     video_controller video(
         .reset(reset),
@@ -623,11 +646,14 @@ module pcw_core(
         .inverse(inverse),
         .disable_vid(disable_vid),
         .ntsc(ntsc),
+        .fake_colour(fake_colour),
+        .fake_end(fake_end),
+        .ypos(ypos),
 
         .vid_addr(ram_a_addr),
         .din(ram_a_dout),
 
-        .rgbi(rgbi),
+        .colour(colour),
         .ce_pix(ce_pix),
         .hsync(hsync),
         .vsync(vsync),
@@ -651,28 +677,62 @@ module pcw_core(
 
     // Video colour processing
     always_comb begin
-        rgb_white = 18'b111110111110111110;
-        if(rgbi==4'b0000) rgb_white = 18'b000000000000000000;
-        else if(rgbi==4'b1000) rgb_white = 18'b110111111111111111;
+        rgb_white = 18'b111111111111110111;
+        if(colour==2'b00) rgb_white = 18'b000000000000000000;
+        else if(colour==2'b11) rgb_white = 18'b111111111111110111;
     end
 
     always_comb begin
-        rgb_green = 18'b000000111110000000;
-        if(rgbi==4'b0000) rgb_green = 18'b000000000000000000;
-        else if(rgbi==4'b1000) rgb_green = 18'b011001111111011001;
+        rgb_green = 18'b011001111111011001;
+        if(colour==2'b00) rgb_green = 18'b000000000000000000;
+        else if(colour==2'b11) rgb_green = 18'b011001111111011001;
     end
 
     always_comb begin
-        rgb_amber = 18'b000000011111111110;
-        if(rgbi==4'b0000) rgb_amber = 18'b000000000000000000;
-        else if(rgbi==4'b1000) rgb_amber = 18'b000000101100111111;
+        rgb_amber = 18'b111111101100000000;
+        if(colour==2'b00) rgb_amber = 18'b000000000000000000;
+        else if(colour==2'b11) rgb_amber = 18'b111111101100000000;
+    end
+
+    logic [17:0] mono_colour;
+    always_comb begin
+        if(disp_color==2'b00) mono_colour = rgb_white;
+        else if(disp_color==2'b01) mono_colour = rgb_green;
+        else if(disp_color==2'b10) mono_colour= rgb_amber;
+        else mono_colour = rgb_white;
     end
 
     always_comb begin
-        RGB = 18'b111110111110111110;
-        if(disp_color==2'b00) RGB = rgb_white;
-        else if(disp_color==2'b01) RGB = rgb_green;
-        else if(disp_color==2'b10) RGB = rgb_amber;
+        RGB = mono_colour;
+        if(fake_colour && ypos < fake_end) begin
+            case(fake_colour_mode)
+                2'b00: RGB = mono_colour;
+                2'b01: begin    // CGA Palette 0 Low
+                    case(colour)
+                        2'b00: RGB =  18'b000000000000000000;   // Black
+                        2'b01: RGB =  18'b000000101011000000;   // Dark Green
+                        2'b10: RGB =  18'b101011000000000000;   // Dark Red
+                        2'b11: RGB =  18'b101011010110000000;   // Brown
+                    endcase                    
+                end
+                2'b10: begin    // CGA Palette 0 High
+                    case(colour)
+                        2'b00: RGB =  18'b000000000000000000;   // Black
+                        2'b01: RGB =  18'b010110111111010110;   // Light Green
+                        2'b10: RGB =  18'b111111010110010110;   // Light Red
+                        2'b11: RGB =  18'b111111111111010110;   // Yellow
+                    endcase                    
+                end
+                2'b11: begin    // CGA Palette 1 High
+                    case(colour)
+                        2'b00: RGB =  18'b000000000000000000;   // Black
+                        2'b01: RGB =  18'b010110111111111111;   // Cyan
+                        2'b10: RGB =  18'b111111010110111111;   // Magenta
+                        2'b11: RGB =  rgb_white;   // White
+                    endcase                    
+                end
+            endcase
+        end
     end
 
     logic [7:0] daisy_dout;
@@ -717,6 +777,8 @@ module pcw_core(
     );
 
     // Keyboard / Joystick controller
+    logic line_up, line_down;   // line up and down signals for moving fake colour
+    logic toggle_full;          // Toggle full screen colour on / off
     logic [7:0] kbd_data;
     key_joystick keyjoy(
         .reset(reset),
@@ -731,6 +793,9 @@ module pcw_core(
         .key_data(kbd_data),
         .keymouse(mouse_type==MOUSE_KEYMOUSE),
         .mouse_pulse(ps2_mouse[24]),
+        .line_up(line_up),
+        .line_down(line_down),
+        .toggle_full(toggle_full),
         .*          // Mouse inputs
     ); 
 
@@ -777,6 +842,7 @@ module pcw_core(
         .speaker(speaker_out)
     );
 
+    logic [7:0] speaker = 'b0;
     logic speaker_out;
     assign speaker = {speaker_out, 6'b0};
     assign audio = {2'b00,ch_a} + {2'b00,ch_b} + {2'b00,ch_c} + {2'b00,speaker};
