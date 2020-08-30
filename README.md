@@ -10,9 +10,10 @@ Despite the intended market being business applications and home office users, t
 The PCW came with 256k or 512k and was expandable upto 2MB of memory.  The high resolution display and large amount of memory for the time, makes the PCW the perfect CP/M machine and an ideal system for playing early text and graphic adventures.
 
 ## Features
-* Amstrad PCW 8256 with Z80 CPU operating at 4Mhz and 256k memory
-* Turbo support to 8Mhz (2x), 16 Mhz(4x) or 32 Mhz
-* 3" Disk Drives with read and write support
+* Amstrad PCW with Z80 CPU operating at 4Mhz
+* Turbo support to 8Mhz (2x), 16 Mhz(4x) or 32 Mhz (8x)
+* Expanded memory support to a maximum of 2MB
+* 3" and 3.5" Disk Drives with read and write support
 * Compatible with standard emulator DSK format
 * PAL (720x256) or NTSC (720x200) resolution support
 * Full PC Keyboard mapping
@@ -26,7 +27,7 @@ The PCW came with 256k or 512k and was expandable upto 2MB of memory.  The high 
   * Kempston Mouse
   * Keymouse
 * Regular PCW Beeper sound and DKTronics Sound Generator (AY-3-8912) support
-* No additional SDRAM or other expansions needed
+* Configurable colour mode
  
 
 ## Using the core
@@ -35,22 +36,59 @@ Unlike many home comptuters of the mid 80's, the Amstrad PCW always included a d
 
 The PCW also doesn't have a BOOT ROM but instead streams a small boot routine from the keyboard controller at power-up time.  The PCW core recreates this boot sequence and does not require any external ROM files to boot.  Just place your DSK images in the **/Games/Amstrad PCW/** directory in the root of the SD card.
 
-Games are usually supplied on two disks, normally the first disk is a CP/M boot disk.  Insert this boot disk into the A: drive using the Menu, then select the **RESET** option to restart and load the disk. Once the boot disk has finished booting, you will be prompted by the PCW change the disk to the second disk and press return.
+Games are usually supplied on two disks, normally the first disk is a CP/M boot disk.  Insert this boot disk into the A: drive using the Menu, then select **RESET** from the OSD menu to load the disk. Once the boot disk has finished booting, you will be prompted by the PCW change the disk to the second disk and press return.
 
 ![](./docs/images/change_disk.jpg)
 
 The main operating system the PCW used was called CP/M which was developed by Digital Research and was one of the worlds first cross platform operating systems.   More infomation about CP/M and some common commands available are documented on [The CP/M Wiki article](https://en.wikipedia.org/wiki/CP/M)
 
+## PCW Models
+
+The PCW core emulates two different models of the PCW:
+* **PCW8256/8512** - Drive A 3" 180k (CF2), Drive B 3" 720k (CF2DD)
+* **PCW9256/9512+** - Both drives 3.5" 720k (MF2DD)
+
+These two different models of the PCW require different boot disks.  This is because each model has a different bootrom, which looks for different checksums on the boot sector of the disk.  If you get the wrong one it will just beep three times indicating the disk is not recognized.
+
+## Fake colour mode
+
+Like the CP/M Box and Joyce emulators and a couple of add-on boards, this core now supports colour modes.  Unlike on those emulators, this does not have to encompass the entire screen, and it is configurable from software should authors of new games wish to make use of it.
+
+<img src="./docs/images/worm.jpg" alt="Gnome Ranger" width="400" height="300">
+
+Many PCW adventure games contain graphics at the top, with a text interface before.  Once Fake Colour mode is enabled, you can use the following keys to control it:
+
+* **F9** - Move colour line enable line up
+* **F10** - Move colour line enable line down
+* **F11** - Toggle full screen colour mode on/off
+
+The mode also comes with three different CGA palettes to select from.
+
 ## Current issue
-* Head over Heels boot screen corrupt - The game itself works fine
-* La Abadia del Crimen - Corrupt graphics
-* CP/M disk images can infrequently become corrupt - Back them up
-* CPC Paging mode not supported - I am not aware of any PCW games using it
+* SymbOS does not work correctly
+* PSI-5 Trading Company - Requires SCAN_EQUAL disk command which is not implemented
+
+# Changes from previous release
+* Support for PCW9512+ Mode and 3.5" drives
+* Support for two disk drives
+* SDRAM support to provide upto 2MB memory
+* Colour mode with configurable starting point
+* CPC paging mode. Fixes issues with various games (e.g. Abadia, Head over Heels)
+* Mouse movement improvements
+* Daisywheel port emulation to allow PCW915+ CPM to boot
+* Fixed issues with disk corruption and boot errors
+* Fixed corruption issue with RAMtest
+* F2/F4/F6/F8 no longer require you to press shift
+
+All the new features are demonstrated in the following video:
+[![Watch the video](https://img.youtube.com/vi/z-IoDr81xjE/hqdefault.jpg)](https://youtu.be/z-IoDr81xjE)
 
 ## Upcoming features
 The following features are coming shortly
-* 2MB memory support using SDRAM
-* 2 Disk Drives
+* Support for SymbOS
+
+## Game Notes
+* Blagger - Will move left unless Joystick is set to Cascade
 
 ## Thanks
 Special thanks to the following people:

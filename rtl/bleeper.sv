@@ -41,7 +41,7 @@ module bleeper(
     output logic speaker
 );
 
-parameter clkdivider = (64000000/2800)/2;
+parameter bit[19:0] clkdivider = (64000000/2800)/2;
 
 logic [19:0] cnt = 'd0;
 reg sq_wave = 1'b0;
