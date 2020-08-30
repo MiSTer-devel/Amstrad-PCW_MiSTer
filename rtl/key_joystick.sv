@@ -198,21 +198,25 @@ always @(posedge clk_sys) begin
 			8'h05: keys[0][2]   <= pressed; // F1 (PC) -> F1/F2 (PCW)
 			8'h06: begin
 				keys[0][2]   <= pressed; // F2 (PC) -> F1/F2 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
 				shifted <= pressed;
 			end
 			8'h04: keys[0][0]   <= pressed; // F3 (PC) -> F3/F4 (PCW)
 			8'h0C: begin
 				keys[0][0]   <= pressed; // F4 (PC) -> F3/F4 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
 				shifted <= pressed;
 			end				
 			8'h03: keys[10][0]  <= pressed; // F5 (PC) -> F5/F6 (PCW)
 			8'h0B: begin
 				keys[10][0]  <= pressed; // F6 (PC) -> F5/F6 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
 				shifted <= pressed;
 			end				
 			8'h83: keys[10][4]  <= pressed; // F7 (PC) -> F7/F8 (PCW)
 			8'h0A: begin
 				keys[10][4]  <= pressed; // F8 (PC) -> F7/F9 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
 				shifted <= pressed;
 			end				
 			8'h1c : keys[8][5] <= pressed; // A
