@@ -143,28 +143,35 @@ localparam BOOT_ROM_END = 16'd275;	// Length of boot rom
 localparam CONF_STR = {
 	"Amstrad PCW;;",
 	"S0,DSK,Mount A:;",
-//	"S1,DSK,Mount B:;",
+	"S1,DSK,Mount B:;",
 	"-;",
+	"O4,System Model,8256/8512,9256/9512+;",
+	"OFG,Memory Size,256K,512K,1MB,2MB;",
+	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
+	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
+	"OIJ,Fake Colour,None,Palette 1, Palette 2, Palette 3;",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 //	"O4,Kbd Layout,PCW,PC;",
 	"OAC,Joystick Type,None,Kempston,Spectravideo,Cascade,DKTronics;",
 	"ODE,Mouse Type,None,AMX,Kempston,Keymouse;",
-	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
+	"OH,DKTronics I/F,Disabled,Enabled;",
 	"-;",
 	"R0,Reset;",
 	"J,Fire 1,Fire 2;",
 	"V,v",`BUILD_DATE
 };
 
+logic locked;
 (* preserve *) wire clk_sys;
 pll pll
 (
 	.refclk   (CLK_50M),
 	.rst      (0),
-	.outclk_0 (clk_sys) // 32 MHz
+	.outclk_0 (clk_sys), // 32 MHz
+	.locked	  (locked)
 );
 
 wire [31:0] status;
@@ -196,7 +203,7 @@ wire [21:0] gamma_bus;
 wire [15:0] joystick_0, joystick_1;
 wire LED;
 
-hps_io #(.STRLEN(($size(CONF_STR)>>3) ), .WIDE(0), .VDNUM(1)) hps_io
+hps_io #(.STRLEN(($size(CONF_STR)>>3) ), .WIDE(0), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
@@ -278,8 +285,8 @@ begin
 			end
 			else begin
 				loader_wr <= 1'b0;
-				loader_addr <= loader_addr + 'd1;
-				read_addr <= read_addr + 'd1;
+				loader_addr <= loader_addr + 16'd1;
+				read_addr <= read_addr + 16'd1;
 				if(read_addr >= BOOT_ROM_END)
 				begin
 					loader_download <= 1'b0;
@@ -295,6 +302,7 @@ end
 boot_loader boot_loader
 (
 	.address(read_addr),
+	.model(status[4]),
 	.data(read_data)
 );
 
@@ -323,6 +331,10 @@ pcw_core pcw_core
 	.disp_color(status[6:5]),
 	.ntsc(status[7]),
 	.overclock(status[9:8]),
+	.model(status[4]),
+	.memory_size(status[16:15]),
+	.dktronics(status[17]),
+	.fake_colour_mode(status[19:18]),
 
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
@@ -336,6 +348,7 @@ pcw_core pcw_core
 	.img_mounted(img_mounted),
 	.img_readonly(img_readonly),
 	.img_size(img_size),
+	.density({1'b1, status[4]}),		// 8256/512 = A=SD, 9512+ A=DD
 
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),
@@ -344,7 +357,10 @@ pcw_core pcw_core
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din),
-	.sd_dout_strobe(sd_buff_wr)	
+	.sd_dout_strobe(sd_buff_wr),
+	// SD RAM signals not explicitly named
+	.locked(locked),
+	.*	
 );
 
 ///////////////////////////////////////////////////
@@ -371,9 +387,9 @@ video_mixer #(.LINE_LENGTH(1024), .GAMMA(1)) video_mixer
 
 	.mono(0),
 
-	.R({RGB[5:0],RGB[5:4]}),
+	.B({RGB[5:0],RGB[5:4]}),
 	.G({RGB[11:6],RGB[11:10]}),
-	.B({RGB[17:12],RGB[17:16]})
+	.R({RGB[17:12],RGB[17:16]})
 );
 
 wire  [8:0] audiomix;

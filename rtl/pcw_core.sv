@@ -57,6 +57,24 @@ module pcw_core(
     input wire [1:0] disp_color,
     input wire [1:0] overclock,
     input wire ntsc,
+    input wire model,
+    input wire [1:0] memory_size,
+    input wire dktronics,
+    input wire [1:0] fake_colour_mode,
+
+    // SDRAM signals
+	output        SDRAM_CLK,
+	output        SDRAM_CKE,
+	output [12:0] SDRAM_A,
+	output  [1:0] SDRAM_BA,
+	inout  [15:0] SDRAM_DQ,
+	output        SDRAM_DQML,
+	output        SDRAM_DQMH,
+	output        SDRAM_nCS,
+	output        SDRAM_nCAS,
+	output        SDRAM_nRAS,
+	output        SDRAM_nWE,
+    input         locked,
 
     input wire dn_clk,
     input wire dn_go,
@@ -70,6 +88,7 @@ module pcw_core(
     input wire [1:0]  img_mounted,
 	input wire        img_readonly,
 	input wire [31:0] img_size,
+    input wire [1:0]  density,
 
 	output logic [31:0] sd_lba,
 	output logic [1:0] sd_rd,
@@ -93,6 +112,17 @@ module pcw_core(
     localparam MOUSE_KEMPSTON   = 2'b10;
     localparam MOUSE_KEYMOUSE   = 2'b11;
 
+    localparam MODEL_8512 = 0;
+    localparam MODEL_9512 = 1;
+
+    localparam MEM_256K = 0;
+    localparam MEM_512K = 1;
+    localparam MEM_1M = 2;
+    localparam MEM_2M = 3;
+
+    logic fake_colour;
+    assign fake_colour = (fake_colour_mode != 2'b00);
+
     // Audio channels
     logic [7:0] ch_a;
     logic [7:0] ch_b;
@@ -102,7 +132,7 @@ module pcw_core(
 
     // dpram addressing
     logic [16:0] ram_a_addr;
-    logic [17:0] ram_b_addr/* synthesis keep */;
+    logic [20:0] ram_b_addr/* synthesis keep */;
     logic [7:0] ram_a_dout;
     logic [7:0] ram_b_dout/* synthesis keep */;
     
@@ -114,18 +144,6 @@ module pcw_core(
     logic cpuclk, cpuclk_r;
     logic romrd,ramrd,ramwr;
     logic ior,iow,memr,memw;
-
-    logic [3:0] rgbi;
-
-    logic [7:0] speaker = 'b0;
-    logic [17:0] rgb_white;
-    logic [17:0] rgb_green;
-    logic [17:0] rgb_amber;
-
-    logic cpu_reg_set = 1'b0;
-    logic [211:0] cpu_reg = 'b0;
-    logic [211:0] cpu_reg_out;
-    
 
     // Generate fractional CPU clock
     reg [15:0] cnt;
@@ -148,16 +166,16 @@ module pcw_core(
             2'b00: {disk_clk, dcnt} <= dcnt + 16'h1000;  // 1x4Mhz - divide by 16: (2^16)/16   = 0x1000
             2'b01: {disk_clk, dcnt} <= dcnt + 16'h2000;  // 2x4Mhz - divide by  8: (2^16)/8    = 0x2000
             2'b10: {disk_clk, dcnt} <= dcnt + 16'h4000;  // 4x4Mhz - divide by  4: (2^16)/4    = 0x4000
-            2'b11: {disk_clk, dcnt} <= dcnt + 16'h4000;  // 8x4Mhz - divide by  4: (2^16)/2    = 0x4000
+            2'b11: {disk_clk, dcnt} <= dcnt + 16'h8000;  // 8x4Mhz - divide by  4: (2^16)/2    = 0x4000
         endcase
     end    
 
-    // Generate 4mhz clock for ay-3-8912 sound
+    // Generate 1mhz clock for ay-3-8912 sound
     reg [15:0] scnt;
     logic snd_clk;
     always @(posedge clk_sys)
     begin
-        {snd_clk, scnt} <= scnt + 16'h1000;  // 1x4Mhz - divide by 16: (2^16)/16   = 0x1000
+        {snd_clk, scnt} <= scnt + 16'h0400;  // divide by 64 = 1Mhz
     end 
 
     // Gated clock which can be disabled during ROM download
@@ -203,9 +221,11 @@ module pcw_core(
     assign memr = cpurd | cpumreq;
     assign memw = cpuwr | cpumreq;
     logic kbd_sel/* synthesis keep */;
-    assign kbd_sel = ram_b_addr[17:4]==14'b00111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
-    assign LED = kbd_sel;
+    assign kbd_sel = ram_b_addr[20:4]==17'b00000111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
+    logic daisy_sel;
+    assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) && (~ior | ~iow)? 1'b1 : 1'b0;
 
+    wire WAIT_n = sdram_access ? ram_ready : 1'b1;
     // Create processor instance
     T80pa cpu(
        	.RESET_n(~reset),
@@ -213,6 +233,7 @@ module pcw_core(
         .CEN_p(GCLK),
         .CEN_n(1'b1),
         .M1_n(cpum1),
+        .WAIT_n(WAIT_n),
         .MREQ_n(cpumreq),
         .IORQ_n(cpuiorq),
         .NMI_n(nmi_sig),
@@ -235,45 +256,48 @@ module pcw_core(
     logic disk_to_nmi = 0;  // if 1, disk generates nmi
     logic disk_to_int = 0;  // if 1, disk generates int
     logic tc = 0;           // TC signal to reset disk
-    logic [7:0] portF0 /* synthesis keep */;     // 0x0000-0x3fff page map
-    logic [7:0] portF1 /* synthesis keep */;     // 0x4000-0x7fff page map
-    logic [7:0] portF2 /* synthesis keep */;     // 0x8000-0xbfff page map
-    logic [7:0] portF3 /* synthesis keep */;     // 0xc000-0xffff page map
-    logic [7:0] portF4 /* synthesis keep */;     // Memory read lock register (CPC only)
-    logic [7:0] portF5 /* synthesis keep */;     // Roller RAM address
-    logic [7:0] portF6 /* synthesis keep */;     // Y scroll
-    logic [7:0] portF7 /* synthesis keep */;     // Inverse / Disable
-    logic [7:0] portF8 /* synthesis keep */;     // Ntsc / Flyback (read)
+    logic [7:0] portF0 /*synthesis noprune*/;     // 0x0000-0x3fff page map
+    logic [7:0] portF1 /*synthesis noprune*/;     // 0x4000-0x7fff page map
+    logic [7:0] portF2 /*synthesis noprune*/;     // 0x8000-0xbfff page map
+    logic [7:0] portF3 /*synthesis noprune*/;     // 0xc000-0xffff page map
+    logic [7:0] portF4 /*synthesis noprune*/;     // Memory read lock register (CPC only)
+    logic [7:0] portF5 /*synthesis noprune*/;     // Roller RAM address
+    logic [7:0] portF6 /*synthesis noprune*/;     // Y scroll
+    logic [7:0] portF7 /*synthesis noprune*/;     // Inverse / Disable
+    logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
 
     // Set CPU data in
     always_comb
     begin
         if(~ior)
         begin
-            casez(cpua[7:0])
-                8'hf8: cpudi = portF8;
-                8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
-                8'hfc: cpudi = 8'hf8;       // Printer Controller
-                8'hfd: cpudi = 8'hc8;       // Printer Controller
-                8'he0: begin                // Joystick or CPS
-                    case(joy_type)
-                        JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
-                        JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
-                        default: cpudi = 8'h00;       // Dart and CPS
-                    endcase
-                end
-                // Kempston Mouse
-                8'b110100??, 8'hd4: cpudi = kempston_dout;
-                // AMX Mouse
-                8'b10?000??: cpudi = amx_dout;
-                // DK Tronics sound and joystick controller
-                8'ha9: cpudi = dk_out;      
-                // Kempston Joystick
-                8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
-                // Floppy controller
-                8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
-                default: cpudi = 8'hff;             
-            endcase
+            if(cpua[15:0]==16'h01fc) cpudi = model ? daisy_dout : 8'hff; 
+            else begin		
+                casez(cpua[7:0])
+                        8'hf8: cpudi = portF8;
+                        8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
+                        8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
+                        8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
+                        8'he0: begin                // Joystick or CPS
+                            case(joy_type)
+                                JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
+                                JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
+                                default: cpudi = 8'h00;       // Dart and CPS
+                            endcase
+                        end
+                        // Kempston Mouse
+                        8'b110100??, 8'hd4: cpudi = kempston_dout;
+                        // AMX Mouse
+                        8'b10?000??: cpudi = amx_dout;
+                        // DK Tronics sound and joystick controller
+                        8'ha9: cpudi = dktronics ? dk_out : 8'hff;
+                        // Kempston Joystick
+                        8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
+                        // Floppy controller
+                        8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
+                        default: cpudi = 8'hff;             
+                endcase
+            end
         end
         else begin
             cpudi = kbd_sel ? kbd_data : ram_b_dout;
@@ -288,11 +312,11 @@ module pcw_core(
     begin
         if(reset)
         begin
-            portF0 <= 8'h00;
-            portF1 <= 8'h00;
-            portF2 <= 8'h00;
-            portF3 <= 8'h00;
-            portF4 <= 8'h00;
+            portF0 <= 8'h80;
+            portF1 <= 8'h81;
+            portF2 <= 8'h82;
+            portF3 <= 8'h83;
+            portF4 <= 8'hf1;
             portF5 <= 8'h00;
             portF6 <= 8'h00;
             portF7 <= 8'h80;
@@ -346,6 +370,18 @@ module pcw_core(
         end
     end
 
+    // logic old_GCLK, old_ior;
+    // always @(posedge clk_sys)
+    // begin
+    //     old_GCLK <= GCLK;
+    //     if(~old_GCLK & GCLK)
+    //     begin
+    //         old_ior <= ior;
+    //         if(old_ior & ~ior & (cpua[7:0]==8'h00 || cpua[7:0]==8'h01)) waitio <= 1'b1;
+    //         else waitio <= 1'b0;
+    //     end
+    // end
+
     // detect fdc interrupt edge
     logic fdc_pe, fdc_ne;
     edge_det fdc_edge_det(.clk_sys(clk_sys), .signal(fdc_int), .pos_edge(fdc_pe), .neg_edge(fdc_ne));
@@ -389,7 +425,7 @@ module pcw_core(
         if(timer_pe) 
         begin
             // Timer count and int line processing
-            if(!(&timer_misses)) timer_misses <= timer_misses + 'b1;
+            if(!(&timer_misses)) timer_misses <= timer_misses + 4'b1;
             if(~iff1) timer_line <= 1'b0;
             else timer_line <= 1'b1;
             // NMI line processing occurs on timer
@@ -415,7 +451,7 @@ module pcw_core(
                 timer_line <= 1'b0;
                 timer_misses <= 'b0;
             end
-            else clear_timer_count <= clear_timer_count + 'd1;
+            else clear_timer_count <= clear_timer_count + 4'd1;
         end
         // Clear interrupts
         if(int_mode_pe)
@@ -435,7 +471,7 @@ module pcw_core(
 	logic nmi_sig/* synthesis keep */, int_sig/* synthesis keep */;
     assign nmi_sig = ~nmi_line;
     // Disk int and timer int combined
-    assign int_sig = ~int_line & ~timer_line;
+    assign int_sig = nmi_line ? 1'b1 : (~int_line & ~timer_line);   // Don't fire if NMI outstanding
 
     // Video control registers
     logic [7:0] roller_ptr;
@@ -447,20 +483,91 @@ module pcw_core(
     assign inverse = portF7[7];
     assign disable_vid = ~portF7[6]; // & ~portF8[3];
 
-    // Paged memory support
+    // Ram B address for various paging modes
+    logic [20:0] pcw_ram_b_addr/* synthesis keep */;
+    logic [17:0] cpc_read_ram_b_addr/* synthesis keep */;
+    logic [17:0] cpc_write_ram_b_addr/* synthesis keep */;
+
+    // Memory size adjusted ports
+    logic [6:0] mportF0,mportF1,mportF2,mportF3;
+    always_comb
+    begin 
+        case(memory_size)
+            MEM_256K: begin
+                mportF0 = {3'b0,portF0[3:0]};
+                mportF1 = {3'b0,portF1[3:0]};
+                mportF2 = {3'b0,portF2[3:0]};
+                mportF3 = {3'b0,portF3[3:0]};
+            end
+            MEM_512K: begin
+                mportF0 = {2'b0,portF0[4:0]};
+                mportF1 = {2'b0,portF1[4:0]};
+                mportF2 = {2'b0,portF2[4:0]};
+                mportF3 = {2'b0,portF3[4:0]};
+            end
+            MEM_1M: begin
+                mportF0 = {1'b0,portF0[5:0]};
+                mportF1 = {1'b0,portF1[5:0]};
+                mportF2 = {1'b0,portF2[5:0]};
+                mportF3 = {1'b0,portF3[5:0]};
+            end
+            MEM_2M: begin
+                mportF0 = portF0[6:0];
+                mportF1 = portF1[6:0];
+                mportF2 = portF2[6:0];
+                mportF3 = portF3[6:0];
+            end
+       endcase
+    end
+
+    // PCW Paged memory support for read and writes
     always_comb
     begin
         case(cpua[15:14])
-            2'b00: ram_b_addr = {portF0[3:0],cpua[13:0]};
-            2'b01: ram_b_addr = {portF1[3:0],cpua[13:0]};
-            2'b10: ram_b_addr = {portF2[3:0],cpua[13:0]};
-            2'b11: ram_b_addr = {portF3[3:0],cpua[13:0]};
+            2'b00: pcw_ram_b_addr = {mportF0,cpua[13:0]};
+            2'b01: pcw_ram_b_addr = {mportF1,cpua[13:0]};
+            2'b10: pcw_ram_b_addr = {mportF2,cpua[13:0]};
+            2'b11: pcw_ram_b_addr = {mportF3,cpua[13:0]};
+        endcase
+    end
+
+    // CPC Paged memory support for reads
+    always_comb
+    begin
+        case(cpua[15:14])
+            2'b00: cpc_read_ram_b_addr = portF4[4] ? {1'b0,portF0[2:0],cpua[13:0]} : {1'b0,portF0[6:4],cpua[13:0]};
+            2'b01: cpc_read_ram_b_addr = portF4[5] ? {1'b0,portF1[2:0],cpua[13:0]} : {1'b0,portF1[6:4],cpua[13:0]};
+            2'b10: cpc_read_ram_b_addr = portF4[6] ? {1'b0,portF2[2:0],cpua[13:0]} : {1'b0,portF2[6:4],cpua[13:0]};
+            2'b11: cpc_read_ram_b_addr = portF4[7] ? {1'b0,portF3[2:0],cpua[13:0]} : {1'b0,portF3[6:4],cpua[13:0]};
+        endcase
+    end
+
+    // CPC Paged memory support for writes
+    always_comb
+    begin
+        case(cpua[15:14])
+            2'b00: cpc_write_ram_b_addr = {1'b0,portF0[2:0],cpua[13:0]};
+            2'b01: cpc_write_ram_b_addr = {1'b0,portF1[2:0],cpua[13:0]};
+            2'b10: cpc_write_ram_b_addr = {1'b0,portF2[2:0],cpua[13:0]};
+            2'b11: cpc_write_ram_b_addr = {1'b0,portF3[2:0],cpua[13:0]};
+        endcase
+    end
+
+    // Finally memory address based upon above page modes
+    always_comb
+    begin
+        case(cpua[15:14])
+            2'b00: ram_b_addr = portF0[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
+            2'b01: ram_b_addr = portF1[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
+            2'b10: ram_b_addr = portF2[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
+            2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
         endcase
     end
 
     // DPRAM - Only support 256K of memory while using dpram
     // Addresses are made up of 4 bits of page number and 14 bits of offset
-    // Port A is used for display memory access.  Can only access 128k
+    // Port A is used for display memory access but can only access 128k
+    logic [7:0] dpram_b_dout;
     dpram #(.DATA(8), .ADDR(18)) main_mem(
         // Port A is used for display memory access
         .a_clk(clk_sys),
@@ -471,11 +578,64 @@ module pcw_core(
 
         // Port B - used for CPU and download access
         .b_clk(clk_sys),
-        .b_wr(dn_go ? dn_wr : ~memw & GCLK),
-        .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr),
+        .b_wr(dn_go ? dn_wr : ~memw & ~|ram_b_addr[20:18]),
+        .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr[17:0]),
         .b_din(dn_go ? dn_data : cpudo),
-        .b_dout(ram_b_dout)
+        .b_dout(dpram_b_dout)
     );
+
+    logic ram_ready;
+    logic [7:0] sdram_b_dout;
+    // Extended SDRAM for memory above 256K.  2MB in size, but first 256K will not be used
+    sdram sdram
+    (
+        .*,
+        .init(~locked),
+        .clk(clk_sys),
+        .dout(sdram_b_dout),
+        .din (cpudo),
+        .addr(ram_b_addr),
+        .we(~memw & sdram_access), 
+        .rd(~memr & sdram_access),
+        .ready(ram_ready)
+    );
+
+    wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+    assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
+
+    // Edge detectors for moving fake pixel line using F9 and F10 keys
+    logic line_up_pe, line_down_pe, toggle_pe;
+    edge_det line_up_edge_det(.clk_sys(clk_sys), .signal(line_up), .pos_edge(line_up_pe));
+    edge_det line_down_edge_det(.clk_sys(clk_sys), .signal(line_down), .pos_edge(line_down_pe));
+    edge_det toggle_full_edge_det(.clk_sys(clk_sys), .signal(toggle_full), .pos_edge(toggle_pe));
+    // Line position of fake colour line
+    logic [7:0] fake_end;
+        always @(posedge clk_sys)
+    begin
+        if(reset) fake_end <= 8'd0;
+        else begin
+            if(line_up_pe && fake_end > 0) fake_end <= fake_end - 8'd1;
+            if(line_down_pe && fake_end < 255) fake_end <= fake_end + 8'd1;
+            if(toggle_pe) begin
+                if(fake_end==8'd255) fake_end <= 8'd0;
+                else if(fake_end==8'd0) fake_end <= 8'd255;
+                else fake_end <= 8'd0;
+            end
+            // Writen to via a write to port FF
+            if(~iow && cpua[7:0]==8'hff) fake_end <= cpudo;
+        end
+    end
+
+    logic [1:0] colour;
+
+    logic [17:0] rgb_white;
+    logic [17:0] rgb_green;
+    logic [17:0] rgb_amber;
+
+    logic cpu_reg_set = 1'b0;
+    logic [211:0] cpu_reg = 'b0;
+    logic [211:0] cpu_reg_out;
+    logic [7:0] ypos;
 
     // Video output controller
     video_controller video(
@@ -486,11 +646,14 @@ module pcw_core(
         .inverse(inverse),
         .disable_vid(disable_vid),
         .ntsc(ntsc),
+        .fake_colour(fake_colour),
+        .fake_end(fake_end),
+        .ypos(ypos),
 
         .vid_addr(ram_a_addr),
         .din(ram_a_dout),
 
-        .rgbi(rgbi),
+        .colour(colour),
         .ce_pix(ce_pix),
         .hsync(hsync),
         .vsync(vsync),
@@ -499,32 +662,91 @@ module pcw_core(
         .timer_int(vid_timer)
     );
 
+    // Head over heals duplicate writes to 0xc000-c1ff for debugging
+    // Clone SD writes into sd_debug for memory debugging using in system member debugger in Quartus
+    // logic [7:0] debug_vid /*synthesis noprune*/;
+    // logic c000_range;
+    // assign c000_range = (ram_b_addr >= 18'hc000 && ram_b_addr < 18'hcfff) & ~memw & GCLK;
+    // sd_debug vid_debug(
+    //     .clock(clk_sys),
+    //     .address(ram_b_addr[11:0]),
+    //     .data(cpudo),
+    //     .wren(c000_range),
+    //     .q(debug_vid)
+    // );
+
     // Video colour processing
     always_comb begin
-        rgb_white = 18'b111110111110111110;
-        if(rgbi==4'b0000) rgb_white = 18'b000000000000000000;
-        else if(rgbi==4'b1000) rgb_white = 18'b110111111111111111;
+        rgb_white = 18'b111111111111110111;
+        if(colour==2'b00) rgb_white = 18'b000000000000000000;
+        else if(colour==2'b11) rgb_white = 18'b111111111111110111;
     end
 
     always_comb begin
-        rgb_green = 18'b000000111110000000;
-        if(rgbi==4'b0000) rgb_green = 18'b000000000000000000;
-        else if(rgbi==4'b1000) rgb_green = 18'b011001111111011001;
+        rgb_green = 18'b011001111111011001;
+        if(colour==2'b00) rgb_green = 18'b000000000000000000;
+        else if(colour==2'b11) rgb_green = 18'b011001111111011001;
     end
 
     always_comb begin
-        rgb_amber = 18'b000000011111111110;
-        if(rgbi==4'b0000) rgb_amber = 18'b000000000000000000;
-        else if(rgbi==4'b1000) rgb_amber = 18'b000000101100111111;
+        rgb_amber = 18'b111111101100000000;
+        if(colour==2'b00) rgb_amber = 18'b000000000000000000;
+        else if(colour==2'b11) rgb_amber = 18'b111111101100000000;
+    end
+
+    logic [17:0] mono_colour;
+    always_comb begin
+        if(disp_color==2'b00) mono_colour = rgb_white;
+        else if(disp_color==2'b01) mono_colour = rgb_green;
+        else if(disp_color==2'b10) mono_colour= rgb_amber;
+        else mono_colour = rgb_white;
     end
 
     always_comb begin
-        RGB = 18'b111110111110111110;
-        if(disp_color==2'b00) RGB = rgb_white;
-        else if(disp_color==2'b01) RGB = rgb_green;
-        else if(disp_color==2'b10) RGB = rgb_amber;
+        RGB = mono_colour;
+        if(fake_colour && ypos < fake_end) begin
+            case(fake_colour_mode)
+                2'b00: RGB = mono_colour;
+                2'b01: begin    // CGA Palette 0 Low
+                    case(colour)
+                        2'b00: RGB =  18'b000000000000000000;   // Black
+                        2'b01: RGB =  18'b000000101011000000;   // Dark Green
+                        2'b10: RGB =  18'b101011000000000000;   // Dark Red
+                        2'b11: RGB =  18'b101011010110000000;   // Brown
+                    endcase                    
+                end
+                2'b10: begin    // CGA Palette 0 High
+                    case(colour)
+                        2'b00: RGB =  18'b000000000000000000;   // Black
+                        2'b01: RGB =  18'b010110111111010110;   // Light Green
+                        2'b10: RGB =  18'b111111010110010110;   // Light Red
+                        2'b11: RGB =  18'b111111111111010110;   // Yellow
+                    endcase                    
+                end
+                2'b11: begin    // CGA Palette 1 High
+                    case(colour)
+                        2'b00: RGB =  18'b000000000000000000;   // Black
+                        2'b01: RGB =  18'b010110111111111111;   // Cyan
+                        2'b10: RGB =  18'b111111010110111111;   // Magenta
+                        2'b11: RGB =  rgb_white;   // White
+                    endcase                    
+                end
+            endcase
+        end
     end
 
+    logic [7:0] daisy_dout;
+    // Fake daisywheel printer interface
+    fake_daisy daisy(
+        .reset(reset),
+        .clk_sys(clk_sys),
+        .ce(cpuclk),
+        .sel(daisy_sel),
+        .address({cpua[8],cpua[0]}),
+        .wr(~iow),
+        .din(cpudo),
+        .dout(daisy_dout)
+    );
 
     // Mouse emulation
     logic mouse_left, mouse_middle, mouse_right;
@@ -555,6 +777,8 @@ module pcw_core(
     );
 
     // Keyboard / Joystick controller
+    logic line_up, line_down;   // line up and down signals for moving fake colour
+    logic toggle_full;          // Toggle full screen colour on / off
     logic [7:0] kbd_data;
     key_joystick keyjoy(
         .reset(reset),
@@ -569,6 +793,9 @@ module pcw_core(
         .key_data(kbd_data),
         .keymouse(mouse_type==MOUSE_KEYMOUSE),
         .mouse_pulse(ps2_mouse[24]),
+        .line_up(line_up),
+        .line_down(line_down),
+        .toggle_full(toggle_full),
         .*          // Mouse inputs
     ); 
 
@@ -594,8 +821,8 @@ module pcw_core(
 
         .BDIR(dk_busdir),
         .BC(dk_bc),
-        .SEL(1'b1),
-        .MODE(1'b1),
+        .SEL(1'b0),
+        .MODE(1'b0),
 
         .CHANNEL_A(ch_a),
         .CHANNEL_B(ch_b),
@@ -603,7 +830,7 @@ module pcw_core(
 
         .IOA_in(dkjoy_io),
 
-        .CE(snd_clk),
+        .CE(snd_clk & dktronics),
         .RESET(reset),
         .CLK(clk_sys)
     ); 
@@ -615,6 +842,7 @@ module pcw_core(
         .speaker(speaker_out)
     );
 
+    logic [7:0] speaker = 'b0;
     logic speaker_out;
     assign speaker = {speaker_out, 6'b0};
     assign audio = {2'b00,ch_a} + {2'b00,ch_b} + {2'b00,ch_c} + {2'b00,speaker};
@@ -629,7 +857,7 @@ module pcw_core(
 
     reg  [1:0] u765_ready = 0;
     always @(posedge clk_sys) if(img_mounted[0]) u765_ready[0] <= |img_size;
-    //always @(posedge clk_sys) if(img_mounted[1]) u765_ready[1] <= 1'b0; //|img_size;
+    always @(posedge clk_sys) if(img_mounted[1]) u765_ready[1] <= |img_size;
 
     logic fdc_int;
     u765 u765
@@ -641,13 +869,15 @@ module pcw_core(
         .a0(cpua[0]),
         .ready(u765_ready),
         .motor({motor,motor}),
-        .available(2'b01),
+        .available(2'b11),
         .nRD(~fdc_sel | ior), 
         .nWR(~fdc_sel | iow),
         .din(cpudo),
         .dout(fdc_dout),
         .int_out(fdc_int),
         .tc(tc),
+        .density(density),
+        .activity_led(LED),
 
         .img_mounted(img_mounted),
         .img_size(img_size[31:0]),
@@ -661,24 +891,6 @@ module pcw_core(
         .sd_buff_din(sd_buff_din),
         .sd_buff_wr(sd_dout_strobe)
     );
-
-    /* - Consider for future support of CPC mode
-    typedef struct packed
-    {
-        logic b7;
-        logic [6:0] block_num;
-    } pcw_mode_t;
-
-    typedef struct packed
-    {
-        logic b7;
-        logic [2:0] block_rd;
-        logic b3;
-        logic [2:0] block_wr;
-    } cpc_mode_t;
-
-    pcw_mode_t pcw_mode;
-    cpc_mode_t cpc_mode; */
 
 endmodule
 

@@ -7,11 +7,13 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/dpram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ym2149.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/u765.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/boot_loader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fake_daisy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/z80_regset.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video_controller.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video_sync.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/bleeper.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pcw_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/z80_debugger.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sd_debug.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/edge_det.sv

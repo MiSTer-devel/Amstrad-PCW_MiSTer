@@ -9,8 +9,21 @@
   * Fix Beeper sound - Done
   * Add DKTronics joystick and sound support - Done
   * Get Mouse support working - AMS Done, Kempston Done, Keymouse Done
+  * Create fake daisywheel module to boot 3.5" disks - Done
+  * RAMtest has corrupt screen at start - done
   * Find issue with intermittent disk corruption
   * Find screen corruption issue with HoE at boot
+  * Fix Blagger stuck key
+
+  
+
+  * CF2DD support
+    * Disk 40 - Drive 40 = 1 : 1 Track
+    * Disk 40 - Drive 80 = 1 : 2 Track
+    * Disk 80 - Drive 40 = 1 : 1 Track - will error
+    * Disk 80 - Drive 80 = 1 : 1 Tract
+    * SENSE_INT_STATE - returns modified cylinder number
+    * SEEK needs cylinder halving
 
 * Future features
   * Add memory above 128K as SDRAM and options for different memory sizes

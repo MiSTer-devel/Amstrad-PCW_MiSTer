@@ -39,7 +39,7 @@ module video_sync(
     input wire i_clk,           // base clock
     input wire i_pix_stb,       // pixel clock strobe
     input wire i_rst,           // reset: restarts frame
-    input wire ntsc,            // 0 = pal, 1 = ntsc
+    input wire i_ntsc,            // 0 = pal, 1 = ntsc
     output logic o_hs,           // horizontal sync
     output logic o_vs,           // vertical sync
     output logic o_hblank,       // high during blanking interval
@@ -81,11 +81,11 @@ module video_sync(
 
     reg [9:0] VS_STA, VS_END, VA_END, SCREEN, VS_TIMER_START;
 
-    assign VS_STA = ~ntsc ? V_P_ACTIVE + V_P_FP : V_N_ACTIVE + V_N_FP;  // vertical sync start
-    assign VS_END = VS_STA + (~ntsc ? V_P_SYNC : V_N_SYNC);             // vertical sync end
+    assign VS_STA = ~i_ntsc ? V_P_ACTIVE + V_P_FP : V_N_ACTIVE + V_N_FP;  // vertical sync start
+    assign VS_END = VS_STA + (~i_ntsc ? V_P_SYNC : V_N_SYNC);             // vertical sync end
     assign VS_TIMER_START = VS_END + 10'd2;                             // Vertical timer start for int
-    assign VA_END = ~ntsc ? V_P_ACTIVE : V_N_ACTIVE;                    // vertical active pixel end
-    assign SCREEN = VS_END + (~ntsc ? V_P_BP : V_N_BP);                 // complete screen (lines)
+    assign VA_END = ~i_ntsc ? V_P_ACTIVE : V_N_ACTIVE;                    // vertical active pixel end
+    assign SCREEN = VS_END + (~i_ntsc ? V_P_BP : V_N_BP);                 // complete screen (lines)
 
     reg [10:0] h_count;  // line position
     reg [9:0] v_count;  // screen position
