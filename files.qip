@@ -17,4 +17,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/z80_debugger.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sd_debug.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/edge_det.sv
-set_global_assignment -name SYSTEMVERILOG_FILE PCW.sv
+set_global_assignment -name SYSTEMVERILOG_FILE Amstrad-PCW.sv
