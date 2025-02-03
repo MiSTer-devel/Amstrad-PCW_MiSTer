@@ -39,7 +39,7 @@ module pcw_core(
     input wire reset,           // Reset
 	input wire clk_sys,         // 64 Mhz System Clock
 
-    output logic [17:0] RGB,    // RGB Output (6-6-6)     
+    output logic [23:0] RGB,    // RGB Output (8-8-8)     
 	output logic hsync,         // Horizontal sync
 	output logic vsync,         // Vertical sync
 	output logic hblank,        // Horizontal blanking
@@ -60,7 +60,7 @@ module pcw_core(
     input wire model,
     input wire [1:0] memory_size,
     input wire dktronics,
-    input wire [1:0] fake_colour_mode,
+    input wire [2:0] fake_colour_mode,
 
     // SDRAM signals
 	output        SDRAM_CLK,
@@ -121,7 +121,9 @@ module pcw_core(
     localparam MEM_2M = 3;
 
     logic fake_colour;
-    assign fake_colour = (fake_colour_mode != 2'b00);
+    assign fake_colour = (fake_colour_mode != 3'b000);
+	logic colorin;
+	assign colorin = (fake_colour_mode == 3'b101);
 
     // Audio channels
     logic [7:0] ch_a;
@@ -144,7 +146,7 @@ module pcw_core(
     logic cpuclk, cpuclk_r;
     logic romrd,ramrd,ramwr;
     logic ior,iow,memr,memw;
-
+    logic reset_conditional;
     // Generate fractional CPU clock
     reg [15:0] cnt;
     always @(posedge clk_sys)
@@ -224,9 +226,11 @@ module pcw_core(
     assign kbd_sel = ram_b_addr[20:4]==17'b00000111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
     logic daisy_sel;
     assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) && (~ior | ~iow)? 1'b1 : 1'b0;
+	//logic color_256in;
+	//assign color_256in =1'b0;
 
     wire WAIT_n = sdram_access ? ram_ready : 1'b1;
-    // Create processor instance
+	// Create processor instance
     T80pa cpu(
        	.RESET_n(~reset),
         .CLK(clk_sys),
@@ -265,7 +269,64 @@ module pcw_core(
     logic [7:0] portF6 /*synthesis noprune*/;     // Y scroll
     logic [7:0] portF7 /*synthesis noprune*/;     // Inverse / Disable
     logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
+	logic [7:0] port80 /*modes pcw+  */;
+	logic [7:0] port81 /*bites pcw+ */;
+	logic pwc_allow_videomode_change =1;
+    logic pcw_last_restart_component =0;
+    logic [3:0] pcw_last_index_color_change;
+    logic [1:0] pcw_last_index_color_change_component;
+    logic [3:0] pcw_video_mode;
+    logic [3:0] indice_a_color;
+    logic [1:0] componente; 
+    logic [23:0] valor_a_cambiar;
+    logic [23:0] mascara_quitar;
+    logic [23:0] valor_aplicar;
+    logic [4:0] rotaciones;
+    logic [3:0] temp_cpudo; // Variable temporal para cpudo
+	logic [23:0] color_table [33:0];
+   logic [23:0] color_256;  
+	// Señal para detectar el flanco de bajada de iow (escritura válida)
+reg iow_prev;
+wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
+    initial begin
+        // Inicializar la tabla de color_256es con 16 color_256es en formato 24'h
+        color_table[0]  = 24'h000000; // Black
+        color_table[1]  = 24'h41FF00; // Green
+        color_table[2]  = 24'h000000; // Black
+        color_table[3]  = 24'h00AA00; // Green
+        color_table[4]  = 24'hAA0000; // Red
+        color_table[5]  = 24'hAA5500; // Orange
+        color_table[6]  = 24'h000000; // Black
+        color_table[7]  = 24'h55FF55; // Light Green
+        color_table[8]  = 24'hFF5555; // Light Red
+        color_table[9]  = 24'hFFFF55; // Yellow
+        color_table[10] = 24'h000000; // Black
+        color_table[11] = 24'h00AAAA; // Cyan
+        color_table[12] = 24'hAA00AA; // Magenta
+        color_table[13] = 24'hAAAAAA; // Light Gray
+        color_table[14] = 24'h000000; // Black
+        color_table[15] = 24'h55FFFF; // Light Cyan
+        color_table[16] = 24'hFF55FF; // Light Magenta
+        color_table[17] = 24'hFFFFFF; // White
+        color_table[18] = 24'h000000; // Black
+        color_table[19] = 24'h0000AA; // Dark Blue
+        color_table[20] = 24'h00AA00; // Dark Green
+        color_table[21] = 24'h00AAAA; // Cyan
+        color_table[22] = 24'hAA0000; // Dark Red
+        color_table[23] = 24'hAA00AA; // Magenta
+        color_table[24] = 24'hAA5500; // Brown
+        color_table[25] = 24'hAAAAAA; // Light Gray
+        color_table[26] = 24'h555555; // Dark Gray
+        color_table[27] = 24'h5555FF; // Light Blue
+        color_table[28] = 24'h55FF55; // Light Green
+        color_table[29] = 24'h55FFFF; // Light Cyan
+        color_table[30] = 24'hFF5555; // Light Red
+        color_table[31] = 24'hFF55FF; // Light Magenta
+        color_table[32] = 24'hFFFF55; // Yellow
+        color_table[33] = 24'hFFFFFF; // White
+        iow_prev = 1;
 
+    end
     // Set CPU data in
     always_comb
     begin
@@ -295,7 +356,18 @@ module pcw_core(
                         8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
                         // Floppy controller
                         8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
-                        default: cpudi = 8'hff;             
+						8'h80 : begin
+                             cpudi =port80;
+                             //reset_conditional <= 1'b1;  //parece que esto no lo lee 
+                             end
+						8'h81 :
+                         begin 
+                                cpudi =port81;
+                               // reset_conditional <= 1'b1; //parece que esto no lo lee 
+                         end 
+                        default: cpudi = 8'hff; 
+						// Pcw + dectect¿?
+
                 endcase
             end
         end
@@ -307,27 +379,359 @@ module pcw_core(
     assign portF8 = {1'b0,vblank,fdc_status_latch,~ntsc,timer_misses};
 
     logic int_mode_change = 1'b0;
-    // IO writing to register ports
-    always @(posedge clk_sys)
-    begin
-        if(reset)
-        begin
-            portF0 <= 8'h80;
-            portF1 <= 8'h81;
-            portF2 <= 8'h82;
-            portF3 <= 8'h83;
-            portF4 <= 8'hf1;
-            portF5 <= 8'h00;
-            portF6 <= 8'h00;
-            portF7 <= 8'h80;
-            disk_to_nmi <= 1'b0;
-            disk_to_int <= 1'b0;
-            tc <= 1'b0;
-            motor <= 1'b0;
-            speaker_enable <= 1'b0;
-        end
-        int_mode_change <= 1'b0;
 
+	always @(posedge clk_sys)
+	begin
+		if(reset  || reset_conditional) begin
+			port80 <= 8'h00;
+			port81 <= 8'h00;
+			pcw_last_index_color_change <= 4'h0;
+			pcw_last_index_color_change_component <= 2'h0;
+			pcw_video_mode <= 4'h0;
+			portF0 <= 8'h80;
+			portF1 <= 8'h81;
+			portF2 <= 8'h82;
+			portF3 <= 8'h83;
+			portF4 <= 8'hf1;
+			portF5 <= 8'h00;
+			portF6 <= 8'h00;
+			portF7 <= 8'h80;
+            pcw_last_restart_component <= 1'b0;
+			disk_to_nmi <= 1'b0;
+			disk_to_int <= 1'b0;
+			tc <= 1'b0;
+			motor <= 1'b0;
+			speaker_enable <= 1'b0;
+			reset_conditional <= 1'b0;
+            iow_prev <= 1;
+            pcw_video_mode <= 0;
+		end
+        iow_prev <= iow;
+		int_mode_change <= 1'b0;
+		if(~iow  && cpua[7:0]==8'h80 && colorin) begin
+			port80 <= cpudo;
+			//ver si algo escribe en el 80 algo
+			 //pwc_allow_videomode_change <= 1;
+			if (cpudo >= 8'h10) begin
+				//reset_conditional <= 1'b1;
+				pcw_last_index_color_change <= 0;
+				pcw_last_index_color_change_component <=0;
+			end
+		end
+		if(iow_falling_edge && cpua[7:0]==8'h81 && colorin) begin
+            port81 <= cpudo;
+            if (port80 & 8'h20) begin
+                // Cambio color_256 paleta mediante índice a color_256es
+                indice_a_color = pcw_last_index_color_change;
+                if (indice_a_color > 4'hF) indice_a_color = 4'h0;
+                case (pcw_video_mode)
+					0: valor_a_cambiar = indice_a_color % 2;
+					1: valor_a_cambiar = (indice_a_color % 4) + 1;
+					2: valor_a_cambiar = (indice_a_color % 16) + 17;
+					3: reset_conditional <= 1'b1;
+				endcase
+				                  case (port81)
+            8'd0:    color_256 = 24'h000000;
+            8'd1:    color_256 = 24'h000055;
+            8'd2:    color_256 = 24'h0000AA;
+            8'd3:    color_256 = 24'h0000FF;
+            8'd4:    color_256 = 24'h002400;
+            8'd5:    color_256 = 24'h002455;
+            8'd6:    color_256 = 24'h0024AA;
+            8'd7:    color_256 = 24'h0024FF;
+            8'd8:    color_256 = 24'h004900;
+            8'd9:    color_256 = 24'h004955;
+            8'd10:   color_256 = 24'h0049AA;
+            8'd11:   color_256 = 24'h0049FF;
+            8'd12:   color_256 = 24'h006D00;
+            8'd13:   color_256 = 24'h006D55;
+            8'd14:   color_256 = 24'h006DAA;
+            8'd15:   color_256 = 24'h006DFF;
+            8'd16:   color_256 = 24'h009200;
+            8'd17:   color_256 = 24'h009255;
+            8'd18:   color_256 = 24'h0092AA;
+            8'd19:   color_256 = 24'h0092FF;
+            8'd20:   color_256 = 24'h00B600;
+            8'd21:   color_256 = 24'h00B655;
+            8'd22:   color_256 = 24'h00B6AA;
+            8'd23:   color_256 = 24'h00B6FF;
+            8'd24:   color_256 = 24'h00DB00;
+            8'd25:   color_256 = 24'h00DB55;
+            8'd26:   color_256 = 24'h00DBAA;
+            8'd27:   color_256 = 24'h00DBFF;
+            8'd28:   color_256 = 24'h00FF00;
+            8'd29:   color_256 = 24'h00FF55;
+            8'd30:   color_256 = 24'h00FFAA;
+            8'd31:   color_256 = 24'h00FFFF;
+            8'd32:   color_256 = 24'h240000;
+            8'd33:   color_256 = 24'h240055;
+            8'd34:   color_256 = 24'h2400AA;
+            8'd35:   color_256 = 24'h2400FF;
+            8'd36:   color_256 = 24'h242400;
+            8'd37:   color_256 = 24'h242455;
+            8'd38:   color_256 = 24'h2424AA;
+            8'd39:   color_256 = 24'h2424FF;
+            8'd40:   color_256 = 24'h244900;
+            8'd41:   color_256 = 24'h244955;
+            8'd42:   color_256 = 24'h2449AA;
+            8'd43:   color_256 = 24'h2449FF;
+            8'd44:   color_256 = 24'h246D00;
+            8'd45:   color_256 = 24'h246D55;
+            8'd46:   color_256 = 24'h246DAA;
+            8'd47:   color_256 = 24'h246DFF;
+            8'd48:   color_256 = 24'h249200;
+            8'd49:   color_256 = 24'h249255;
+            8'd50:   color_256 = 24'h2492AA;
+            8'd51:   color_256 = 24'h2492FF;
+            8'd52:   color_256 = 24'h24B600;
+            8'd53:   color_256 = 24'h24B655;
+            8'd54:   color_256 = 24'h24B6AA;
+            8'd55:   color_256 = 24'h24B6FF;
+            8'd56:   color_256 = 24'h24DB00;
+            8'd57:   color_256 = 24'h24DB55;
+            8'd58:   color_256 = 24'h24DBAA;
+            8'd59:   color_256 = 24'h24DBFF;
+            8'd60:   color_256 = 24'h24FF00;
+            8'd61:   color_256 = 24'h24FF55;
+            8'd62:   color_256 = 24'h24FFAA;
+            8'd63:   color_256 = 24'h24FFFF;
+            8'd64:   color_256 = 24'h490000;
+            8'd65:   color_256 = 24'h490055;
+            8'd66:   color_256 = 24'h4900AA;
+            8'd67:   color_256 = 24'h4900FF;
+            8'd68:   color_256 = 24'h492400;
+            8'd69:   color_256 = 24'h492455;
+            8'd70:   color_256 = 24'h4924AA;
+            8'd71:   color_256 = 24'h4924FF;
+            8'd72:   color_256 = 24'h494900;
+            8'd73:   color_256 = 24'h494955;
+            8'd74:   color_256 = 24'h4949AA;
+            8'd75:   color_256 = 24'h4949FF;
+            8'd76:   color_256 = 24'h496D00;
+            8'd77:   color_256 = 24'h496D55;
+            8'd78:   color_256 = 24'h496DAA;
+            8'd79:   color_256 = 24'h496DFF;
+            8'd80:   color_256 = 24'h499200;
+            8'd81:   color_256 = 24'h499255;
+            8'd82:   color_256 = 24'h4992AA;
+            8'd83:   color_256 = 24'h4992FF;
+            8'd84:   color_256 = 24'h49B600;
+            8'd85:   color_256 = 24'h49B655;
+            8'd86:   color_256 = 24'h49B6AA;
+            8'd87:   color_256 = 24'h49B6FF;
+            8'd88:   color_256 = 24'h49DB00;
+            8'd89:   color_256 = 24'h49DB55;
+            8'd90:   color_256 = 24'h49DBAA;
+            8'd91:   color_256 = 24'h49DBFF;
+            8'd92:   color_256 = 24'h49FF00;
+            8'd93:   color_256 = 24'h49FF55;
+            8'd94:   color_256 = 24'h49FFAA;
+            8'd95:   color_256 = 24'h49FFFF;
+            8'd96:   color_256 = 24'h6D0000;
+            8'd97:   color_256 = 24'h6D0055;
+            8'd98:   color_256 = 24'h6D00AA;
+            8'd99:   color_256 = 24'h6D00FF;
+            8'd100:  color_256 = 24'h6D2400;
+            8'd101:  color_256 = 24'h6D2455;
+            8'd102:  color_256 = 24'h6D24AA;
+            8'd103:  color_256 = 24'h6D24FF;
+            8'd104:  color_256 = 24'h6D4900;
+            8'd105:  color_256 = 24'h6D4955;
+            8'd106:  color_256 = 24'h6D49AA;
+            8'd107:  color_256 = 24'h6D49FF;
+            8'd108:  color_256 = 24'h6D6D00;
+            8'd109:  color_256 = 24'h6D6D55;
+            8'd110:  color_256 = 24'h6D6DAA;
+            8'd111:  color_256 = 24'h6D6DFF;
+            8'd112:  color_256 = 24'h6D9200;
+            8'd113:  color_256 = 24'h6D9255;
+            8'd114:  color_256 = 24'h6D92AA;
+            8'd115:  color_256 = 24'h6D92FF;
+            8'd116:  color_256 = 24'h6DB600;
+            8'd117:  color_256 = 24'h6DB655;
+            8'd118:  color_256 = 24'h6DB6AA;
+            8'd119:  color_256 = 24'h6DB6FF;
+            8'd120:  color_256 = 24'h6DDB00;
+            8'd121:  color_256 = 24'h6DDB55;
+            8'd122:  color_256 = 24'h6DDBAA;
+            8'd123:  color_256 = 24'h6DDBFF;
+            8'd124:  color_256 = 24'h6DFF00;
+            8'd125:  color_256 = 24'h6DFF55;
+            8'd126:  color_256 = 24'h6DFFAA;
+            8'd127:  color_256 = 24'h6DFFFF;
+            8'd128:  color_256 = 24'h920000;
+            8'd129:  color_256 = 24'h920055;
+            8'd130:  color_256 = 24'h9200AA;
+            8'd131:  color_256 = 24'h9200FF;
+            8'd132:  color_256 = 24'h922400;
+            8'd133:  color_256 = 24'h922455;
+            8'd134:  color_256 = 24'h9224AA;
+            8'd135:  color_256 = 24'h9224FF;
+            8'd136:  color_256 = 24'h924900;
+            8'd137:  color_256 = 24'h924955;
+            8'd138:  color_256 = 24'h9249AA;
+            8'd139:  color_256 = 24'h9249FF;
+            8'd140:  color_256 = 24'h926D00;
+            8'd141:  color_256 = 24'h926D55;
+            8'd142:  color_256 = 24'h926DAA;
+            8'd143:  color_256 = 24'h926DFF;
+            8'd144:  color_256 = 24'h929200;
+            8'd145:  color_256 = 24'h929255;
+            8'd146:  color_256 = 24'h9292AA;
+            8'd147:  color_256 = 24'h9292FF;
+            8'd148:  color_256 = 24'h92B600;
+            8'd149:  color_256 = 24'h92B655;
+            8'd150:  color_256 = 24'h92B6AA;
+            8'd151:  color_256 = 24'h92B6FF;
+            8'd152:  color_256 = 24'h92DB00;
+            8'd153:  color_256 = 24'h92DB55;
+            8'd154:  color_256 = 24'h92DBAA;
+            8'd155:  color_256 = 24'h92DBFF;
+            8'd156:  color_256 = 24'h92FF00;
+            8'd157:  color_256 = 24'h92FF55;
+            8'd158:  color_256 = 24'h92FFAA;
+            8'd159:  color_256 = 24'h92FFFF;
+            8'd160:  color_256 = 24'hB60000;
+            8'd161:  color_256 = 24'hB60055;
+            8'd162:  color_256 = 24'hB600AA;
+            8'd163:  color_256 = 24'hB600FF;
+            8'd164:  color_256 = 24'hB62400;
+            8'd165:  color_256 = 24'hB62455;
+            8'd166:  color_256 = 24'hB624AA;
+            8'd167:  color_256 = 24'hB624FF;
+            8'd168:  color_256 = 24'hB64900;
+            8'd169:  color_256 = 24'hB64955;
+            8'd170:  color_256 = 24'hB649AA;
+            8'd171:  color_256 = 24'hB649FF;
+            8'd172:  color_256 = 24'hB66D00;
+            8'd173:  color_256 = 24'hB66D55;
+            8'd174:  color_256 = 24'hB66DAA;
+            8'd175:  color_256 = 24'hB66DFF;
+            8'd176:  color_256 = 24'hB69200;
+            8'd177:  color_256 = 24'hB69255;
+            8'd178:  color_256 = 24'hB692AA;
+            8'd179:  color_256 = 24'hB692FF;
+            8'd180:  color_256 = 24'hB6B600;
+            8'd181:  color_256 = 24'hB6B655;
+            8'd182:  color_256 = 24'hB6B6AA;
+            8'd183:  color_256 = 24'hB6B6FF;
+            8'd184:  color_256 = 24'hB6DB00;
+            8'd185:  color_256 = 24'hB6DB55;
+            8'd186:  color_256 = 24'hB6DBAA;
+            8'd187:  color_256 = 24'hB6DBFF;
+            8'd188:  color_256 = 24'hB6FF00;
+            8'd189:  color_256 = 24'hB6FF55;
+            8'd190:  color_256 = 24'hB6FFAA;
+            8'd191:  color_256 = 24'hB6FFFF;
+            8'd192:  color_256 = 24'hDB0000;
+            8'd193:  color_256 = 24'hDB0055;
+            8'd194:  color_256 = 24'hDB00AA;
+            8'd195:  color_256 = 24'hDB00FF;
+            8'd196:  color_256 = 24'hDB2400;
+            8'd197:  color_256 = 24'hDB2455;
+            8'd198:  color_256 = 24'hDB24AA;
+            8'd199:  color_256 = 24'hDB24FF;
+            8'd200:  color_256 = 24'hDB4900;
+            8'd201:  color_256 = 24'hDB4955;
+            8'd202:  color_256 = 24'hDB49AA;
+            8'd203:  color_256 = 24'hDB49FF;
+            8'd204:  color_256 = 24'hDB6D00;
+            8'd205:  color_256 = 24'hDB6D55;
+            8'd206:  color_256 = 24'hDB6DAA;
+            8'd207:  color_256 = 24'hDB6DFF;
+            8'd208:  color_256 = 24'hDB9200;
+            8'd209:  color_256 = 24'hDB9255;
+            8'd210:  color_256 = 24'hDB92AA;
+            8'd211:  color_256 = 24'hDB92FF;
+            8'd212:  color_256 = 24'hDBB600;
+            8'd213:  color_256 = 24'hDBB655;
+            8'd214:  color_256 = 24'hDBB6AA;
+            8'd215:  color_256 = 24'hDBB6FF;
+            8'd216:  color_256 = 24'hDBDB00;
+            8'd217:  color_256 = 24'hDBDB55;
+            8'd218:  color_256 = 24'hDBDBAA;
+            8'd219:  color_256 = 24'hDBDBFF;
+            8'd220:  color_256 = 24'hDBFF00;
+            8'd221:  color_256 = 24'hDBFF55;
+            8'd222:  color_256 = 24'hDBFFAA;
+            8'd223:  color_256 = 24'hDBFFFF;
+            8'd224:  color_256 = 24'hFF0000;
+            8'd225:  color_256 = 24'hFF0055;
+            8'd226:  color_256 = 24'hFF00AA;
+            8'd227:  color_256 = 24'hFF00FF;
+            8'd228:  color_256 = 24'hFF2400;
+            8'd229:  color_256 = 24'hFF2455;
+            8'd230:  color_256 = 24'hFF24AA;
+            8'd231:  color_256 = 24'hFF24FF;
+            8'd232:  color_256 = 24'hFF4900;
+            8'd233:  color_256 = 24'hFF4955;
+            8'd234:  color_256 = 24'hFF49AA;
+            8'd235:  color_256 = 24'hFF49FF;
+            8'd236:  color_256 = 24'hFF6D00;
+            8'd237:  color_256 = 24'hFF6D55;
+            8'd238:  color_256 = 24'hFF6DAA;
+            8'd239:  color_256 = 24'hFF6DFF;
+            8'd240:  color_256 = 24'hFF9200;
+            8'd241:  color_256 = 24'hFF9255;
+            8'd242:  color_256 = 24'hFF92AA;
+            8'd243:  color_256 = 24'hFF92FF;
+            8'd244:  color_256 = 24'hFFB600;
+            8'd245:  color_256 = 24'hFFB655;
+            8'd246:  color_256 = 24'hFFB6AA;
+            8'd247:  color_256 = 24'hFFB6FF;
+            8'd248:  color_256 = 24'hFFDB00;
+            8'd249:  color_256 = 24'hFFDB55;
+            8'd250:  color_256 = 24'hFFDBAA;
+            8'd251:  color_256 = 24'hFFDBFF;
+            8'd252:  color_256 = 24'hFFFF00;
+            8'd253:  color_256 = 24'hFFFF55;
+            8'd254:  color_256 = 24'hFFFFAA;
+            8'd255:  color_256 = 24'hFFFFFF;
+            default: color_256 = 24'h000000; // Por defecto, negro
+        endcase
+		               color_table[valor_a_cambiar]  =color_256;
+                pcw_last_index_color_change <= pcw_last_index_color_change + 1;
+               // if (pcw_last_index_color_change >= 4'h10) pcw_last_index_color_change <= 4'h0;
+            end else     if (port80 & 8'h10) begin
+				// Cambio color paleta mediante RGB
+				indice_a_color = pcw_last_index_color_change ; // Adjust index if needed
+				case (pcw_video_mode)
+					0: valor_a_cambiar = indice_a_color % 2;
+					1: valor_a_cambiar = (indice_a_color % 4) + 2;
+					2: valor_a_cambiar = (indice_a_color % 16) + 18;
+					3: reset_conditional <= 1'b1;
+				endcase
+               
+
+
+				componente = pcw_last_index_color_change_component;
+
+				// Calculate the mask and shift value for the current component
+				rotaciones = componente * 8; // 0, 8, or 16 for R, G, B
+				mascara_quitar = ~(24'hFF << rotaciones); // Mask to clear the current component
+				valor_aplicar = cpudo << rotaciones; // Shift the new value to the correct position
+
+				// Update only the current component in the color_256 table
+				color_table[valor_a_cambiar] = (color_table[valor_a_cambiar] & mascara_quitar) | valor_aplicar;
+
+				// Increment the component counter
+				if (pcw_last_index_color_change_component >= 2'h2) begin
+					pcw_last_index_color_change_component <= 2'h0; // Wrap around after 2
+					pcw_last_index_color_change <= pcw_last_index_color_change + 1;
+					if (pcw_last_index_color_change >= 4'h0f) pcw_last_index_color_change <= 4'h0;
+				end else begin
+					pcw_last_index_color_change_component <= pcw_last_index_color_change_component + 1;
+				end
+            end else begin
+                // Cambio modo
+                temp_cpudo = cpudo[3:0]; // Usar una variable temporal
+                if (temp_cpudo >= 4'h4) temp_cpudo = 4'h0;
+                pcw_video_mode <= temp_cpudo;
+/*                 if (temp_cpudo == 4'h2) begin
+                    reset_conditional <= 1'b1; // llega exito
+                end */
+            end
+        end 
         if(~iow && cpua[7:0]==8'hf0) portF0 <= cpudo;
         if(~iow && cpua[7:0]==8'hf1) portF1 <= cpudo;
         if(~iow && cpua[7:0]==8'hf2) portF2 <= cpudo;
@@ -368,6 +772,9 @@ module pcw_core(
             else if(cpudo[3:0] == 4'd12) speaker_enable <= 1'b0;
             //if(img_mounted) motor <= 0; // Reset on new image mounted
         end
+
+
+
     end
 
     // logic old_GCLK, old_ior;
@@ -441,6 +848,8 @@ module pcw_core(
             clear_timer <= 1'b1; // Clear timer
             clear_timer_count <= 'b0;
         end
+
+		
         // Clear timer processing
         if(clear_timer)
         begin
@@ -568,7 +977,7 @@ module pcw_core(
     // Addresses are made up of 4 bits of page number and 14 bits of offset
     // Port A is used for display memory access but can only access 128k
     logic [7:0] dpram_b_dout;
-    dpram #(.DATA(8), .ADDR(18)) main_mem(
+    dpram #(.DATA(8), .ADDR(17)) main_mem(
         // Port A is used for display memory access
         .a_clk(clk_sys),
         .a_wr(1'b0),        // Video never writes to display memory
@@ -578,8 +987,8 @@ module pcw_core(
 
         // Port B - used for CPU and download access
         .b_clk(clk_sys),
-        .b_wr(dn_go ? dn_wr : ~memw & ~|ram_b_addr[20:18]),
-        .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr[17:0]),
+        .b_wr(dn_go ? dn_wr : ~memw & ~|ram_b_addr[20:17]),
+        .b_addr(dn_go ? dn_addr[16:0] : ram_b_addr[16:0]),
         .b_din(dn_go ? dn_data : cpudo),
         .b_dout(dpram_b_dout)
     );
@@ -600,7 +1009,8 @@ module pcw_core(
         .ready(ram_ready)
     );
 
-    wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+    //wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+	wire sdram_access = |ram_b_addr[20:17];// && memory_size > MEM_256K;
     assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
     // Edge detectors for moving fake pixel line using F9 and F10 keys
@@ -626,11 +1036,11 @@ module pcw_core(
         end
     end
 
-    logic [1:0] colour;
+    logic [3:0] colour;
 
-    logic [17:0] rgb_white;
-    logic [17:0] rgb_green;
-    logic [17:0] rgb_amber;
+    logic [23:0] rgb_white;
+    logic [23:0] rgb_green;
+    logic [23:0] rgb_amber;
 
     logic cpu_reg_set = 1'b0;
     logic [211:0] cpu_reg = 'b0;
@@ -647,6 +1057,7 @@ module pcw_core(
         .disable_vid(disable_vid),
         .ntsc(ntsc),
         .fake_colour(fake_colour),
+        .pcw_video_mode(pcw_video_mode),
         .fake_end(fake_end),
         .ypos(ypos),
 
@@ -677,24 +1088,24 @@ module pcw_core(
 
     // Video colour processing
     always_comb begin
-        rgb_white = 18'b111111111111110111;
-        if(colour==2'b00) rgb_white = 18'b000000000000000000;
-        else if(colour==2'b11) rgb_white = 18'b111111111111110111;
+        rgb_white = 24'hAAAAAA;
+        if(colour==4'b0000) rgb_white = 24'h000000;
+        else if(colour==4'b1111) rgb_white = 24'hFFFFFF;
     end
 
     always_comb begin
-        rgb_green = 18'b011001111111011001;
-        if(colour==2'b00) rgb_green = 18'b000000000000000000;
-        else if(colour==2'b11) rgb_green = 18'b011001111111011001;
+        rgb_green = 24'h00aa00;
+        if(colour==4'b0000) rgb_green = 24'h000000;
+        else if(colour==4'b1111) rgb_green = 24'h00aa00;
     end
 
     always_comb begin
-        rgb_amber = 18'b111111101100000000;
-        if(colour==2'b00) rgb_amber = 18'b000000000000000000;
-        else if(colour==2'b11) rgb_amber = 18'b111111101100000000;
+        rgb_amber = 24'hff5500;
+        if(colour==4'b0000) rgb_amber = 24'h000000;
+        else if(colour==4'b1111) rgb_amber = 24'hff5500;
     end
 
-    logic [17:0] mono_colour;
+    logic [23:0] mono_colour;
     always_comb begin
         if(disp_color==2'b00) mono_colour = rgb_white;
         else if(disp_color==2'b01) mono_colour = rgb_green;
@@ -706,31 +1117,101 @@ module pcw_core(
         RGB = mono_colour;
         if(fake_colour && ypos < fake_end) begin
             case(fake_colour_mode)
-                2'b00: RGB = mono_colour;
-                2'b01: begin    // CGA Palette 0 Low
-                    case(colour)
-                        2'b00: RGB =  18'b000000000000000000;   // Black
-                        2'b01: RGB =  18'b000000101011000000;   // Dark Green
-                        2'b10: RGB =  18'b101011000000000000;   // Dark Red
-                        2'b11: RGB =  18'b101011010110000000;   // Brown
+                3'b000: RGB = mono_colour;
+                3'b001: begin    // CGA Palette 0 Low
+                    case(colour[3:2])
+                        //2'b00: RGB =  24'h000000;   // Black
+					    //2'b01: RGB =  24'h00aa00;   // Green
+                        //2'b10: RGB =  24'haa0000;   // Red
+						//2'b11: RGB =  24'haa5500;   // Brown
+						2'b00: RGB =  color_table[2];   // Black
+					    2'b01: RGB =  color_table[3];   // Green
+                        2'b10: RGB =  color_table[4];   // Red
+						2'b11: RGB =  color_table[5];   // Brown
                     endcase                    
                 end
-                2'b10: begin    // CGA Palette 0 High
-                    case(colour)
-                        2'b00: RGB =  18'b000000000000000000;   // Black
-                        2'b01: RGB =  18'b010110111111010110;   // Light Green
-                        2'b10: RGB =  18'b111111010110010110;   // Light Red
-                        2'b11: RGB =  18'b111111111111010110;   // Yellow
+                3'b010: begin    // CGA Palette 0 High
+                    case(colour[3:2])
+                        //2'b00: RGB =  24'h000000;   // Black
+                        //2'b01: RGB =  24'h55ff55;   // Light Green
+                        //2'b10: RGB =  24'hff5555;   // Light Red
+						//2'b11: RGB =  24'hffff55;   // Yellow
+                        2'b00: RGB =  color_table[6];   // Black
+                        2'b01: RGB =  color_table[7];   // Light Green
+                        2'b10: RGB =  color_table[8];   // Light Red
+						2'b11: RGB =  color_table[9];   // Yellow
                     endcase                    
                 end
-                2'b11: begin    // CGA Palette 1 High
-                    case(colour)
-                        2'b00: RGB =  18'b000000000000000000;   // Black
-                        2'b01: RGB =  18'b010110111111111111;   // Cyan
-                        2'b10: RGB =  18'b111111010110111111;   // Magenta
-                        2'b11: RGB =  rgb_white;   // White
-                    endcase                    
-                end
+                3'b011: begin    // CGA Palette 1 low
+                    case(colour[3:2])
+                        //2'b00: RGB =  24'h000000;   // Black
+                        //2'b01: RGB =  24'h00aaaa;   // Cyan
+                        //2'b10: RGB =  24'haa00aa;   // Magenta
+                        //2'b11: RGB =  24'haaaaaa;   // light grey
+								2'b00: RGB =  color_table[10];   // Black
+                        2'b01: RGB =  color_table[11];   // Cyan
+                        2'b10: RGB =  color_table[12];   // Magenta
+                        2'b11: RGB =  color_table[13];   // light grey
+                    endcase 
+						end 
+					3'b100: begin    // CGA Palette 1 High
+                    case(colour[3:2])
+                        2'b00: RGB =  24'h000000;   // Black
+                        //2'b01: RGB =  24'h55ffff;   // Light Cyan
+                        //2'b10: RGB =  24'hff55ff;   // Light Magenta
+                        //2'b11: RGB =  24'hffffff;   // White
+								2'b00: RGB = color_table[14];   // Black
+                        2'b01: RGB =  color_table[15];   // Light Cyan
+                        2'b10: RGB =  color_table[16];   // Light Magenta
+                        2'b11: RGB =  color_table[17];   // White
+                    endcase 
+					 end 
+					 3'b101: begin   // color_256in	
+							if (pcw_video_mode ==0) RGB = mono_colour;
+							else if (pcw_video_mode ==1) begin 
+								case(colour[3:2])
+									2'b00: RGB =  color_table[2];   
+									2'b01: RGB =  color_table[3];
+									2'b10: RGB =  color_table[4];
+									2'b11: RGB =  color_table[5];
+								endcase
+							end else if (pcw_video_mode ==2) begin
+								case(colour[3:0])                            
+ 									4'b0000: RGB =  color_table[18];
+									4'b0001: RGB =  color_table[19];
+									4'b0010: RGB =  color_table[20];
+									4'b0011: RGB =  color_table[21];
+									4'b0100: RGB =  color_table[22];
+									4'b0101: RGB =  color_table[23];
+									4'b0110: RGB =  color_table[24];
+									4'b0111: RGB =  color_table[25];
+									4'b1000: RGB =  color_table[26];
+									4'b1001: RGB =  color_table[27];
+									4'b1010: RGB =  color_table[28];
+									4'b1011: RGB =  color_table[29];
+									4'b1100: RGB =  color_table[30];
+									4'b1101: RGB =  color_table[31];
+									4'b1110: RGB =  color_table[32];
+									4'b1111: RGB =  color_table[33];
+  /*                    4'b0000: RGB =  24'h000000;   // Black
+                        4'b0001: RGB =  24'h0000aa;   // Blue
+                        4'b0010: RGB =  24'h00aa00;   // Green
+                        4'b0011: RGB =  24'h00aaaa;   // Cyan
+                        4'b0100: RGB =  24'haa0000;   // Red
+                        4'b0101: RGB =  24'haa00aa;   // Magenta
+                        4'b0110: RGB =  24'haa5500;   // Yellow Brown
+                        4'b0111: RGB =  24'haaaaaa;   // White / gray
+                        4'b1000: RGB =  24'h555555;   // dark gray
+                        4'b1001: RGB =  24'h5555ff;   // Light blue
+                        4'b1010: RGB =  24'h55ff55;   // Light green
+                        4'b1011: RGB =  24'h55ffff;   // light cyan
+                        4'b1100: RGB =  24'hff5555;   // light red
+                        4'b1101: RGB =  24'hff55ff;   // Light magenta
+                        4'b1110: RGB =  24'hffff55;   // Light yellow
+                        4'b1111: RGB =  24'hffffff;   // bright white */
+								endcase 
+							end
+						end
             endcase
         end
     end
@@ -818,21 +1299,18 @@ module pcw_core(
     ym2149 soundchip(
         .DI(cpudo),
         .DO(dk_out),
-
-        .BDIR(dk_busdir),
+		.BDIR(dk_busdir),
         .BC(dk_bc),
         .SEL(1'b0),
         .MODE(1'b0),
-
-        .CHANNEL_A(ch_a),
+	    .CHANNEL_A(ch_a),
         .CHANNEL_B(ch_b),
         .CHANNEL_C(ch_c),
-
-        .IOA_in(dkjoy_io),
-
+	      .IOA_in(dkjoy_io),
         .CE(snd_clk & dktronics),
         .RESET(reset),
         .CLK(clk_sys)
+
     ); 
 
     // Bleeper audio
@@ -891,6 +1369,7 @@ module pcw_core(
         .sd_buff_din(sd_buff_din),
         .sd_buff_wr(sd_dout_strobe)
     );
+
 
 endmodule
 
