@@ -207,7 +207,7 @@ module video_controller(
                 // Shift every other pixel in fake colour mode
                 if(fake_colour && y < fake_end) begin
                     if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[3:0],4'b0} : pixel_reg;
-                   // else if (pcw_video_mode ==0) pixel_reg <= {pixel_reg[6:0], 1'b0};  
+                    else if (pcw_video_mode ==0) pixel_reg <= {pixel_reg[6:0], 1'b0};  
                     else pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0} : pixel_reg; 
                 end
                 // else every pixel

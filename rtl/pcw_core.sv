@@ -358,12 +358,10 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
 						8'h80 : begin
                              cpudi =port80;
-                             //reset_conditional <= 1'b1;  //parece que esto no lo lee 
                              end
 						8'h81 :
                          begin 
                                 cpudi =port81;
-                               // reset_conditional <= 1'b1; //parece que esto no lo lee 
                          end 
                         default: cpudi = 8'hff; 
 						// Pcw + dectect¿?
@@ -383,8 +381,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 	always @(posedge clk_sys)
 	begin
 		if(reset  || reset_conditional) begin
-			port80 <= 8'h00;
-			port81 <= 8'h00;
+			port80 = 8'h00;
+			port81 = 8'h00;
 			pcw_last_index_color_change <= 4'h0;
 			pcw_last_index_color_change_component <= 2'h0;
 			pcw_video_mode <= 4'h0;
@@ -409,28 +407,25 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         iow_prev <= iow;
 		int_mode_change <= 1'b0;
 		if(~iow  && cpua[7:0]==8'h80 && colorin) begin
-			port80 <= cpudo;
-			//ver si algo escribe en el 80 algo
-			 //pwc_allow_videomode_change <= 1;
+			port80 = cpudo;
 			if (cpudo >= 8'h10) begin
-				//reset_conditional <= 1'b1;
 				pcw_last_index_color_change <= 0;
 				pcw_last_index_color_change_component <=0;
 			end
 		end
 		if(iow_falling_edge && cpua[7:0]==8'h81 && colorin) begin
-            port81 <= cpudo;
+            port81 = cpudo;
             if (port80 & 8'h20) begin
-                // Cambio color_256 paleta mediante índice a color_256es
+                //change color by palette
                 indice_a_color = pcw_last_index_color_change;
                 if (indice_a_color > 4'hF) indice_a_color = 4'h0;
                 case (pcw_video_mode)
 					0: valor_a_cambiar = indice_a_color % 2;
-					1: valor_a_cambiar = (indice_a_color % 4) + 1;
-					2: valor_a_cambiar = (indice_a_color % 16) + 17;
+					1: valor_a_cambiar = (indice_a_color % 16) + 2;
+					2: valor_a_cambiar = (indice_a_color % 16) + 18;
 					3: reset_conditional <= 1'b1;
 				endcase
-				                  case (port81)
+				                  case (cpudo)
             8'd0:    color_256 = 24'h000000;
             8'd1:    color_256 = 24'h000055;
             8'd2:    color_256 = 24'h0000AA;
@@ -691,10 +686,10 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         endcase
 		               color_table[valor_a_cambiar]  =color_256;
                 pcw_last_index_color_change <= pcw_last_index_color_change + 1;
-               // if (pcw_last_index_color_change >= 4'h10) pcw_last_index_color_change <= 4'h0;
             end else     if (port80 & 8'h10) begin
-				// Cambio color paleta mediante RGB
-				indice_a_color = pcw_last_index_color_change ; // Adjust index if needed
+
+				// change color RGB
+				indice_a_color = pcw_last_index_color_change ;
 				case (pcw_video_mode)
 					0: valor_a_cambiar = indice_a_color % 2;
 					1: valor_a_cambiar = (indice_a_color % 4) + 2;
@@ -727,9 +722,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                 temp_cpudo = cpudo[3:0]; // Usar una variable temporal
                 if (temp_cpudo >= 4'h4) temp_cpudo = 4'h0;
                 pcw_video_mode <= temp_cpudo;
-/*                 if (temp_cpudo == 4'h2) begin
-                    reset_conditional <= 1'b1; // llega exito
-                end */
             end
         end 
         if(~iow && cpua[7:0]==8'hf0) portF0 <= cpudo;
