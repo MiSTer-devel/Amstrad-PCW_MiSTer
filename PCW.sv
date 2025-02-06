@@ -211,7 +211,7 @@ localparam CONF_STR = {
 	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
-	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, Colorin;",
+	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, colorIN;",
 	"OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%, CRT 75%;",
 	"OMN,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",

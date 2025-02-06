@@ -13,7 +13,7 @@
 //
 // * Redistributions in synthesized form must reproduce the above copyright
 //   notice, this list of conditions and the following disclaimer in the
-//   documentation and/or other materials provided with the distribution.
+//   documentation and/or or materials provided with the distribution.
 //
 // * Neither the name of the author nor the names of other contributors may
 //   be used to endorse or promote products derived from this software without
@@ -61,7 +61,6 @@ module pcw_core(
     input wire [1:0] memory_size,
     input wire dktronics,
     input wire [2:0] fake_colour_mode,
-    //input wire colorin,
     // SDRAM signals
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -119,11 +118,6 @@ module pcw_core(
     localparam MEM_512K = 1;
     localparam MEM_1M = 2;
     localparam MEM_2M = 3;
-
-//    logic fake_colour;
-//    assign fake_colour = (fake_colour_mode != 3'b000);
-//	logic colorin;
-//	assign colorin = (fake_colour_mode == 3'b101);
 
     // Audio channels
     logic [7:0] ch_a;
@@ -825,10 +819,10 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic [7:0] fake_end;
         always @(posedge clk_sys)
     begin
-        if(reset) fake_end <= 8'd0;
+        if(reset) fake_end <= 8'd255;   //fix last line ?
         else begin
             if(line_up_pe && fake_end > 0) fake_end <= fake_end - 8'd1;
-            if(line_down_pe && fake_end <= 255) fake_end <= fake_end + 8'd1;
+            if(line_down_pe && fake_end < 255) fake_end <= fake_end + 8'd1;
             if(toggle_pe) begin
                 if(fake_end==8'd255) fake_end <= 8'd0;
                 else if(fake_end==8'd0) fake_end <= 8'd255;
@@ -861,7 +855,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         .ntsc(ntsc),
         .fake_colour_mode(fake_colour_mode),
         .pcw_video_mode(pcw_video_mode),
-        //.colorin(colorin),
         .fake_end(fake_end),
         .ypos(ypos),
 
@@ -919,7 +912,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 
     always_comb begin
         RGB = mono_colour;
-        if(ypos +1 <= fake_end) begin
+        if(ypos <= fake_end) begin
             case(fake_colour_mode)
                 3'b000: RGB = mono_colour;
                 3'b001: begin    // CGA Palette 0 Low

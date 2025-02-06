@@ -47,7 +47,6 @@ module video_controller(
 	input wire [1:0] pcw_video_mode,     // Fake colour mode EGA enabled
     input wire [7:0] fake_end,      // Fake colour end row
     output logic [7:0] ypos,        // Current yposition for fake colour comparison logic
-    input wire colorin,             // Colour in for fake colour mode
 	output logic [16:0] vid_addr,   // Address Bus out for reading pixel data & roller ram
 	input wire [7:0] din,           // Data in for pixel data and roller ram
 
@@ -178,7 +177,7 @@ module video_controller(
              // else shift pixel register left
             else begin
                    // Shift every other pixel in fake colour mode
-               if (fake_colour_mode > 3'b000 && y < fake_end) begin
+               if (fake_colour_mode > 3'b000 && y <= fake_end) begin
                     if(fake_colour_mode == 3'b101) begin
                         if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[3:0],4'b0} : pixel_reg;
                         else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0} : pixel_reg;                     
@@ -187,7 +186,7 @@ module video_controller(
 				end else pixel_reg <= {pixel_reg[6:0], 1'b0}; 					
             end 
             // Load pixel register
-            pixel <= (fake_colour_mode >3'b000 && y < fake_end ) ? pixel_reg[7:4] : {pixel_reg[7], pixel_reg[7],pixel_reg[7], pixel_reg[7]};
+            pixel <= (fake_colour_mode >3'b000 && y <= fake_end ) ? pixel_reg[7:4] : {pixel_reg[7], pixel_reg[7],pixel_reg[7], pixel_reg[7]};
         end
     end
     // Screen on and pixel to draw
