@@ -211,7 +211,7 @@ localparam CONF_STR = {
 	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
-	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high,ColorIn;",
+	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, Colorin;",
 	"OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%, CRT 75%;",
 	"OMN,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
@@ -422,7 +422,7 @@ pcw_core pcw_core
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
 	.fake_colour_mode(status[28:26]),
-
+	//.colorin(status[29]),
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
 	.dn_wr(loader_wr),
