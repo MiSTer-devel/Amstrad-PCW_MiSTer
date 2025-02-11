@@ -1,7 +1,7 @@
 //============================================================================
 //  Amstrad PCW port to MiSTer
 //  Copyright (c) 2020 Stephen Eddy
-//  Color modes Copyright (c) 2020 habisoft
+//  PCWPLUS Color modes Copyright (c) 2020 habisoft
 //============================================================================
 
 module emu
@@ -211,7 +211,7 @@ localparam CONF_STR = {
 	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
-	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, colorIN;",
+	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, PCWPLUS;",
 	"OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%, CRT 75%;",
 	"OMN,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
@@ -440,7 +440,7 @@ pcw_core pcw_core
 	.sd_lba(sd_lba_0),
 	.sd_rd(sd_rd),
 	.sd_wr(sd_wr),
-	.sd_ack(sd_ack),
+	.sd_ack(sd_ack[0]|sd_ack[1]),
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din_0),

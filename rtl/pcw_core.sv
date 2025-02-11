@@ -220,10 +220,9 @@ module pcw_core(
     assign kbd_sel = ram_b_addr[20:4]==17'b00000111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
     logic daisy_sel;
     assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) && (~ior | ~iow)? 1'b1 : 1'b0;
-	//logic color_256in;
-	//assign color_256in =1'b0;
-
-    wire WAIT_n = sdram_access ? ram_ready : 1'b1;
+//
+  //  wire WAIT_n = sdram_access ? ram_ready : 1'b1;
+    wire WAIT_n = (ram_ready | (cpuiorq & cpumreq));
 	// Create processor instance
     T80pa cpu(
        	.RESET_n(~reset),
@@ -263,10 +262,8 @@ module pcw_core(
     logic [7:0] portF6 /*synthesis noprune*/;     // Y scroll
     logic [7:0] portF7 /*synthesis noprune*/;     // Inverse / Disable
     logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
-	logic [7:0] port80 /*modes pcw+  */;
-	logic [7:0] port81 /*bites pcw+ */;
-	//logic pwc_allow_videomode_change =1;
-    //logic pcw_last_restart_component =0;
+	logic [7:0] port80 /*pcwmode  */;
+	logic [7:0] port81 /*colour*/;
     logic [3:0] pcw_last_index_color_change;
     logic [1:0] pcw_last_index_color_change_component;
     logic [3:0] pcw_video_mode;
@@ -280,7 +277,7 @@ module pcw_core(
 	logic [23:0] color_table [37:0];
    logic [23:0] color_256;  
    logic [7:0] red_256, green_256, blue_256;
-	// Señal para detectar el flanco de bajada de iow (escritura válida)
+	// // Signal to detect the falling edge of iow (valid write)
 reg iow_prev;
 wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     initial begin
@@ -334,36 +331,31 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             if(cpua[15:0]==16'h01fc) cpudi = model ? daisy_dout : 8'hff; 
             else begin		
                 casez(cpua[7:0])
-                        8'hf8: cpudi = portF8;
-                        8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
-                        8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
-                        8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
-                        8'he0: begin                // Joystick or CPS
-                            case(joy_type)
-                                JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
-                                JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
-                                default: cpudi = 8'h00;       // Dart and CPS
-                            endcase
-                        end
-                        // Kempston Mouse
-                        8'b110100??, 8'hd4: cpudi = kempston_dout;
-                        // AMX Mouse
-                        8'b10?000??: cpudi = amx_dout;
-                        // DK Tronics sound and joystick controller
-                        8'ha9: cpudi = dktronics ? dk_out : 8'hff;
-                        // Kempston Joystick
-                        8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
-                        // Floppy controller
-                        8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
-						8'h80 : begin
-                             cpudi =port80;
-                             end
-						8'h81 :
-                         begin 
-                                cpudi =port81;
-                         end 
-                        default: cpudi = 8'hff; 
-						// Pcw + dectect¿?
+                    8'hf8: cpudi = portF8;
+                    8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
+                    8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
+                    8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
+                    8'he0: begin                // Joystick or CPS
+                        case(joy_type)
+                            JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
+                            JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
+                            default: cpudi = 8'h00;       // Dart and CPS
+                        endcase
+                    end
+                    // Kempston Mouse
+                    8'b110100??, 8'hd4: cpudi = kempston_dout;
+                    // AMX Mouse
+                    //  8'b10?000??: begin 
+                    8'b101000??:   cpudi = amx_dout; //assing only a0 ,a1 ,a2 and a3  
+                    // DK Tronics sound and joystick controller
+                    8'ha9: cpudi = dktronics ? dk_out : 8'hff;
+                    // Kempston Joystick
+                    8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
+                    // Floppy controller
+                    8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
+					8'h80:  cpudi = port80; 
+					8'h81:  cpudi = port81;
+                    default: cpudi = 8'hff;
 
                 endcase
             end
@@ -372,7 +364,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             cpudi = kbd_sel ? kbd_data : ram_b_dout;
         end
     end
-
     assign portF8 = {1'b0,vblank,fdc_status_latch,~ntsc,timer_misses};
 
     logic int_mode_change = 1'b0;
@@ -380,8 +371,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 	always @(posedge clk_sys)
 	begin
 		if(reset  || reset_conditional) begin
-			port80 = 8'h00;
-			port81 = 8'h00;
+			port80 <= 8'h00;
+			port81 <= 8'h00;
 			pcw_last_index_color_change <= 4'h0;
 			pcw_last_index_color_change_component <= 2'h0;
 			pcw_video_mode <= 4'h0;
@@ -393,7 +384,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 			portF5 <= 8'h00;
 			portF6 <= 8'h00;
 			portF7 <= 8'h80;
-           // pcw_last_restart_component <= 1'b0;
 			disk_to_nmi <= 1'b0;
 			disk_to_int <= 1'b0;
 			tc <= 1'b0;
@@ -444,22 +434,22 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         iow_prev <= iow;
 		int_mode_change <= 1'b0;
 		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==3'b101) begin
-			port80 = cpudo;
+			port80 <= cpudo;
 			if (cpudo >= 8'h10) begin
 				pcw_last_index_color_change <= 0;
 				pcw_last_index_color_change_component <=0;
 			end
 		end
 		if(iow_falling_edge && cpua[7:0]==8'h81 && fake_colour_mode ==3'b101) begin
-            port81 = cpudo;
+            port81 <= cpudo;
             if (port80 & 8'h20) begin
                 //change color by palette
                 indice_a_color = pcw_last_index_color_change;
                 if (indice_a_color > 4'hF) indice_a_color = 4'h0;
                 case (pcw_video_mode)
-					0: valor_a_cambiar = indice_a_color % 2;
-					1: valor_a_cambiar = (indice_a_color % 16) + 18;
-					2: valor_a_cambiar = (indice_a_color % 16) + 22;
+					0: valor_a_cambiar = indice_a_color;
+					1: valor_a_cambiar = (indice_a_color) + 18;
+					2: valor_a_cambiar = (indice_a_color) + 22;
 					3: reset_conditional <= 1'b1;
 				endcase
 
@@ -569,9 +559,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             else if(cpudo[3:0] == 4'd12) speaker_enable <= 1'b0;
             //if(img_mounted) motor <= 0; // Reset on new image mounted
         end
-
-
-
     end
 
     // logic old_GCLK, old_ior;
@@ -645,8 +632,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             clear_timer <= 1'b1; // Clear timer
             clear_timer_count <= 'b0;
         end
-
-		
         // Clear timer processing
         if(clear_timer)
         begin
@@ -819,7 +804,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic [7:0] fake_end;
         always @(posedge clk_sys)
     begin
-        if(reset) fake_end <= 8'd255;   //fix last line ?
+        if(reset) fake_end <= 8'd255;   //colour by default in colour modes
         else begin
             if(line_up_pe && fake_end > 0) fake_end <= fake_end - 8'd1;
             if(line_down_pe && fake_end < 255) fake_end <= fake_end + 8'd1;
@@ -990,9 +975,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     // Fake daisywheel printer interface
     fake_daisy daisy(
         .reset(reset),
-
-
-
         .clk_sys(clk_sys),
         .ce(cpuclk),
         .sel(daisy_sel),
@@ -1011,7 +993,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 
     // AMX mouse driver
     logic [7:0] amx_dout;
-    wire amx_sel = ~ior && (cpua[7:2]==6'b101000 || cpua[7:2]==6'b100000) && mouse_type==MOUSE_AMX;
+    //wire amx_sel = ~ior && (cpua[7:2]==6'b101000 || cpua[7:2]==6'b100000) && mouse_type==MOUSE_AMX; // only ports A0,A1,A2,A3
+    wire amx_sel = ~ior && (cpua[7:2]==6'b101000) && mouse_type==MOUSE_AMX;
     amx_mouse amx_mouse(
         .sel(amx_sel),
         .addr(cpua[1:0]),
@@ -1083,7 +1066,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         .CE(snd_clk & dktronics),
         .RESET(reset),
         .CLK(clk_sys)
-
     ); 
 
     // Bleeper audio
