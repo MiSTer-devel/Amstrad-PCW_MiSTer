@@ -61,6 +61,7 @@ module pcw_core(
     input wire [1:0] memory_size,
     input wire dktronics,
     input wire [2:0] fake_colour_mode,
+    input wire [127:0] palette ,
     // SDRAM signals
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -274,7 +275,7 @@ module pcw_core(
     logic [23:0] valor_aplicar;
     logic [4:0] rotaciones;
     logic [3:0] temp_cpudo; 
-	logic [23:0] color_table [37:0];
+	logic [23:0] color_table [41:0];
    logic [23:0] color_256;  
    logic [7:0] red_256, green_256, blue_256;
 	// // Signal to detect the falling edge of iow (valid write)
@@ -283,28 +284,28 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     initial begin
         // Inicializar la tabla de color_256es con 16 color_256es en formato 24'h
         color_table[0]  = 24'h000000; // Black
-        color_table[1]  = 24'h41FF00; // Green colorIn mode 0
-        color_table[2]  = 24'h000000; // Black palette 0 low
+        color_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
+        color_table[2]  = 24'h000000; // Black - palette 0 low
         color_table[3]  = 24'h00AA00; // Green
         color_table[4]  = 24'hAA0000; // Red
         color_table[5]  = 24'hAA5500; // Orange
-        color_table[6]  = 24'h000000; // Black palette 0 high
+        color_table[6]  = 24'h000000; // Black - palette 0 high
         color_table[7]  = 24'h55FF55; // Light Green
         color_table[8]  = 24'hFF5555; // Light Red
         color_table[9]  = 24'hFFFF55; // Yellow
-        color_table[10] = 24'h000000; // Black palette 1 low
+        color_table[10] = 24'h000000; // Black - palette 1 low
         color_table[11] = 24'h00AAAA; // Cyan
         color_table[12] = 24'hAA00AA; // Magenta
         color_table[13] = 24'hAAAAAA; // Light Gray
-        color_table[14] = 24'h000000; // Black palette 1 high
+        color_table[14] = 24'h000000; // Black - palette 1 high
         color_table[15] = 24'h55FFFF; // Light Cyan
         color_table[16] = 24'hFF55FF; // Light Magenta
         color_table[17] = 24'hFFFFFF; // White
-        color_table[18] = 24'h000000; // Black  colorIn mode 1
+        color_table[18] = 24'h000000; // Black - pcwplus mode 1
         color_table[19] = 24'h00AAAA; // Cyan
         color_table[20] = 24'hAA00AA; // Magenta
         color_table[21] = 24'hAAAAAA; // Light Gray
-        color_table[22] = 24'h000000; // Black  colorIn mode 2
+        color_table[22] = 24'h000000; // Black - pcwplus mode 2
         color_table[23] = 24'h0000AA; // Dark Blue
         color_table[24] = 24'h00AA00; // Dark Green
         color_table[25] = 24'h00AAAA; // Cyan
@@ -320,6 +321,10 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         color_table[35] = 24'hFF55FF; // Light Magenta
         color_table[36] = 24'hFFFF55; // Yellow
         color_table[37] = 24'hFFFFFF; // White
+        color_table[38] = 24'h000000; // Black - load palette
+        color_table[39] = 24'h00AAAA; // Cyan
+        color_table[40] = 24'hAA00AA; // Magenta
+        color_table[41] = 24'hAAAAAA; // Light Gray
         iow_prev = 1;
 
     end
@@ -367,7 +372,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     assign portF8 = {1'b0,vblank,fdc_status_latch,~ntsc,timer_misses};
 
     logic int_mode_change = 1'b0;
-
 	always @(posedge clk_sys)
 	begin
 		if(reset  || reset_conditional) begin
@@ -430,7 +434,15 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 			color_table[35] = 24'hFF55FF; // Light Magenta
 			color_table[36] = 24'hFFFF55; // Yellow
 			color_table[37] = 24'hFFFFFF; // White
+            color_table[38] = 24'h000000; // Black - load palette
+            color_table[39] = 24'h00AAAA; // Cyan
+            color_table[40] = 24'hAA00AA; // Magenta
+            color_table[41] = 24'hAAAAAA; // Light Gray
 		end
+        color_table[38] = palette[127:104];
+        color_table[39] = palette[103:80];
+        color_table[40] = palette[79:56];
+        color_table[41] = palette[55:32];
         iow_prev <= iow;
 		int_mode_change <= 1'b0;
 		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==3'b101) begin
@@ -931,13 +943,12 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         2'b10: RGB =  color_table[16];   // Light Magenta
                         2'b11: RGB =  color_table[17];   // White
                     endcase 
-				end 
-				3'b101: begin   // colorin 
-					if (pcw_video_mode ==0) begin
+                end 
+                3'b101: begin   // PCWPLUS 
+                    if (pcw_video_mode ==0) begin
                         case(colour[3])
                            1'b0: RGB = color_table[0];
                            1'b1: RGB = color_table[1];
-                              //  RGB = color_table[1];
                         endcase
 					end else if (pcw_video_mode ==1) begin 
 						case(colour[3:2])
@@ -967,6 +978,14 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 						endcase 
 					end
 				end
+                3'b110: begin   // Palette load
+                    case(colour[3:2])
+						2'b00: RGB =  color_table[38];   
+						2'b01: RGB =  color_table[39];
+						2'b10: RGB =  color_table[40];
+						2'b11: RGB =  color_table[41];
+					endcase
+                end  
             endcase
         end
     end

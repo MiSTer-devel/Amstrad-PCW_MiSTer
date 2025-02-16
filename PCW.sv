@@ -1,7 +1,7 @@
 //============================================================================
 //  Amstrad PCW port to MiSTer
 //  Copyright (c) 2020 Stephen Eddy
-//  PCWPLUS Color modes Copyright (c) 2020 habisoft
+//  PCWPLUS Color modes modes Copyright (c) 2020 habisoft
 //============================================================================
 
 module emu
@@ -206,17 +206,17 @@ localparam CONF_STR = {
 	"S1,DSK,Mount B:;",
 	"-;",
 	"O4,System Model,8256/8512,9256/9512+;",
-	"OFG,Memory Size,256K,512K,1MB,2MB;",
+	"OF6,Memory Size,256K,512K,1MB,2MB;",
 	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
 	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
-	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, PCWPLUS;",
+	"F3,gbp,Load Palette;",
+	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, PCWPLUS, loaded palette;",
 	"OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%, CRT 75%;",
 	"OMN,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"-;",
-//	"O4,Kbd Layout,PCW,PC;",
 	"OAC,Joystick Type,None,Kempston,Spectravideo,Cascade,DKTronics;",
 	"ODE,Mouse Type,None,AMX,Kempston,Keymouse;",
 	"OH,DKTronics I/F,Disabled,Enabled;",
@@ -262,22 +262,6 @@ wire        forced_scandoubler;
 wire [10:0] ps2_key;
 wire [24:0] ps2_mouse;
 
-//wire        key_pressed;
-//wire [7:0]  key_code;
-//wire        key_strobe;
-//wire        key_extended;
-//wire  [8:0] mouse_x;
-//wire  [8:0] mouse_y;
-//wire  [7:0] mouse_flags;
-//wire        mouse_strobe;
-
-
-//wire [24:0] ps2_mouse = { mouse_strobe_level, mouse_y[7:0], mouse_x[7:0], mouse_flags };
-//reg         mouse_strobe_level;
-//always @(posedge clk_sys) if (mouse_strobe) mouse_strobe_level <= ~mouse_strobe_level;
-
-//wire [10:0] ps2_key ={key_strobe,key_pressed,key_extended,key_code};
-
 wire [21:0] gamma_bus;
 
 wire [15:0] joystick_0, joystick_1;
@@ -288,7 +272,6 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(0), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
-
 
 	.ps2_key(ps2_key),
 	.ps2_mouse(ps2_mouse),
@@ -328,9 +311,10 @@ assign sd_lba[0]=sd_lba_0;
 assign sd_lba[1]=sd_lba_0;
 
 
-wire rom_download = ioctl_download && ioctl_index==0;
+wire rom_download = ioctl_download && (ioctl_index==0);
+wire palette_download = ioctl_download && (ioctl_index == 3);
 //wire reset = RESET | status[0] | buttons[1] | rom_download;
-wire reset = ~locked | status[0] | buttons[1];
+wire reset = ~locked | status[0] | buttons[1] ;
 
 // signals from loader
 logic loader_wr;		
@@ -372,8 +356,8 @@ begin
 			end
 			else begin
 				loader_wr <= 1'b0;
-				loader_addr <= loader_addr + 'd1;//rampa
-				read_addr <= read_addr + 'd1;//rampa
+				loader_addr <= loader_addr + 'd1;
+				read_addr <= read_addr + 'd1;
 				if(read_addr >= BOOT_ROM_END)
 				begin
 					loader_download <= 1'b0;
@@ -392,12 +376,18 @@ boot_loader boot_loader
 	.model(status[4]),
 	.data(read_data)
 );
+reg [127:0] palette = 128'h00000032cd320000ff00ffff00000000;
 
+always @(posedge clk_sys) begin
+	if (palette_download & ioctl_wr) begin
+			palette[127:0] <= {palette[119:0], ioctl_data[7:0]};
+	end
+end
 pcw_core pcw_core
 (
 	.reset(reset),
 	.clk_sys(clk_sys),
-
+	.palette(palette),
 	.joy0(joystick_0),
 	.joy1(joystick_1),
 	.joy_type(status[12:10]),
@@ -422,7 +412,6 @@ pcw_core pcw_core
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
 	.fake_colour_mode(status[28:26]),
-	//.colorin(status[29]),
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
 	.dn_wr(loader_wr),
