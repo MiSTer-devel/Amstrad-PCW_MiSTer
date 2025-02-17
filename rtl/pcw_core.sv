@@ -60,7 +60,7 @@ module pcw_core(
     input wire model,
     input wire [1:0] memory_size,
     input wire dktronics,
-    input wire [2:0] fake_colour_mode,
+    input wire [1:0] fake_colour_mode,
     input wire [127:0] palette ,
     // SDRAM signals
 	output        SDRAM_CLK,
@@ -141,7 +141,6 @@ module pcw_core(
     logic cpuclk, cpuclk_r;
     logic romrd,ramrd,ramwr;
     logic ior,iow,memr,memw;
-    logic reset_conditional;
     // Generate fractional CPU clock
     reg [15:0] cnt;
     always @(posedge clk_sys)
@@ -265,66 +264,50 @@ module pcw_core(
     logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
 	logic [7:0] port80 /*pcwmode  */;
 	logic [7:0] port81 /*colour*/;
-    logic [3:0] pcw_last_index_color_change;
-    logic [1:0] pcw_last_index_color_change_component;
+    logic [3:0] pcw_last_index_colour_change;
+    logic [1:0] pcw_last_index_colour_change_component;
     logic [3:0] pcw_video_mode;
-    logic [3:0] indice_a_color;
-    logic [1:0] componente; 
-    logic [23:0] valor_a_cambiar;
-    logic [23:0] mascara_quitar;
-    logic [23:0] valor_aplicar;
-    logic [4:0] rotaciones;
+    logic [3:0] index_to_colour;
+    logic [1:0] component; 
+    logic [23:0] value_to_change;
+    logic [23:0] mask_to_apply;
+    logic [23:0] value_to_apply;
+    logic [4:0] rotation;
     logic [3:0] temp_cpudo; 
-	logic [23:0] color_table [41:0];
-   logic [23:0] color_256;  
+	logic [23:0] colour_table [25:0];
+   logic [23:0] colour_256;  
    logic [7:0] red_256, green_256, blue_256;
 	// // Signal to detect the falling edge of iow (valid write)
 reg iow_prev;
 wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     initial begin
-        // Inicializar la tabla de color_256es con 16 color_256es en formato 24'h
-        color_table[0]  = 24'h000000; // Black
-        color_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
-        color_table[2]  = 24'h000000; // Black - palette 0 low
-        color_table[3]  = 24'h00AA00; // Green
-        color_table[4]  = 24'hAA0000; // Red
-        color_table[5]  = 24'hAA5500; // Orange
-        color_table[6]  = 24'h000000; // Black - palette 0 high
-        color_table[7]  = 24'h55FF55; // Light Green
-        color_table[8]  = 24'hFF5555; // Light Red
-        color_table[9]  = 24'hFFFF55; // Yellow
-        color_table[10] = 24'h000000; // Black - palette 1 low
-        color_table[11] = 24'h00AAAA; // Cyan
-        color_table[12] = 24'hAA00AA; // Magenta
-        color_table[13] = 24'hAAAAAA; // Light Gray
-        color_table[14] = 24'h000000; // Black - palette 1 high
-        color_table[15] = 24'h55FFFF; // Light Cyan
-        color_table[16] = 24'hFF55FF; // Light Magenta
-        color_table[17] = 24'hFFFFFF; // White
-        color_table[18] = 24'h000000; // Black - pcwplus mode 1
-        color_table[19] = 24'h00AAAA; // Cyan
-        color_table[20] = 24'hAA00AA; // Magenta
-        color_table[21] = 24'hAAAAAA; // Light Gray
-        color_table[22] = 24'h000000; // Black - pcwplus mode 2
-        color_table[23] = 24'h0000AA; // Dark Blue
-        color_table[24] = 24'h00AA00; // Dark Green
-        color_table[25] = 24'h00AAAA; // Cyan
-        color_table[26] = 24'hAA0000; // Dark Red
-        color_table[27] = 24'hAA00AA; // Magenta
-        color_table[28] = 24'hAA5500; // Brown
-        color_table[29] = 24'hAAAAAA; // Light Gray
-        color_table[30] = 24'h555555; // Dark Gray
-        color_table[31] = 24'h5555FF; // Light Blue
-        color_table[32] = 24'h55FF55; // Light Green
-        color_table[33] = 24'h55FFFF; // Light Cyan
-        color_table[34] = 24'hFF5555; // Light Red
-        color_table[35] = 24'hFF55FF; // Light Magenta
-        color_table[36] = 24'hFFFF55; // Yellow
-        color_table[37] = 24'hFFFFFF; // White
-        color_table[38] = 24'h000000; // Black - load palette
-        color_table[39] = 24'h00AAAA; // Cyan
-        color_table[40] = 24'hAA00AA; // Magenta
-        color_table[41] = 24'hAAAAAA; // Light Gray
+        // Colour in format 24'h
+        colour_table[0]  = 24'h000000; // Black
+        colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
+        colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
+        colour_table[3]  = 24'h00AA00; // Green
+        colour_table[4]  = 24'hAA0000; // Red
+        colour_table[5]  = 24'hAA5500; // Orange
+        colour_table[6] = 24'h000000; // Black - pcwplus mode 2
+        colour_table[7] = 24'h0000AA; // Dark Blue
+        colour_table[8] = 24'h00AA00; // Dark Green
+        colour_table[9] = 24'h00AAAA; // Cyan
+        colour_table[10] = 24'hAA0000; // Dark Red
+        colour_table[11] = 24'hAA00AA; // Magenta
+        colour_table[12] = 24'hAA5500; // Brown
+        colour_table[13] = 24'hAAAAAA; // Light Gray
+        colour_table[14] = 24'h555555; // Dark Gray
+        colour_table[15] = 24'h5555FF; // Light Blue
+        colour_table[16] = 24'h55FF55; // Light Green
+        colour_table[17] = 24'h55FFFF; // Light Cyan
+        colour_table[18] = 24'hFF5555; // Light Red
+        colour_table[19] = 24'hFF55FF; // Light Magenta
+        colour_table[20] = 24'hFFFF55; // Yellow
+        colour_table[21] = 24'hFFFFFF; // White
+        colour_table[22] = 24'h000000; // Black - load palette
+        colour_table[23] = 24'h00AAAA; // Cyan
+        colour_table[24] = 24'hAA00AA; // Magenta
+        colour_table[25] = 24'hAAAAAA; // Light Gray
         iow_prev = 1;
 
     end
@@ -374,11 +357,11 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic int_mode_change = 1'b0;
 	always @(posedge clk_sys)
 	begin
-		if(reset  || reset_conditional) begin
+		if(reset) begin
 			port80 <= 8'h00;
 			port81 <= 8'h00;
-			pcw_last_index_color_change <= 4'h0;
-			pcw_last_index_color_change_component <= 2'h0;
+			pcw_last_index_colour_change <= 4'h0;
+			pcw_last_index_colour_change_component <= 2'h0;
 			pcw_video_mode <= 4'h0;
 			portF0 <= 8'h80;
 			portF1 <= 8'h81;
@@ -393,78 +376,62 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 			tc <= 1'b0;
 			motor <= 1'b0;
 			speaker_enable <= 1'b0;
-			reset_conditional <= 1'b0;
             iow_prev <= 1;
             pcw_video_mode <= 0;
-			color_table[0]  = 24'h000000; // Black
-			color_table[1]  = 24'h41FF00; // Green colorIN mode 0
-			color_table[2]  = 24'h000000; // Black palette 0 low
-			color_table[3]  = 24'h00AA00; // Green
-			color_table[4]  = 24'hAA0000; // Red
-			color_table[5]  = 24'hAA5500; // Orange
-			color_table[6]  = 24'h000000; // Black palette 0 high
-			color_table[7]  = 24'h55FF55; // Light Green
-			color_table[8]  = 24'hFF5555; // Light Red
-			color_table[9]  = 24'hFFFF55; // Yellow
-			color_table[10] = 24'h000000; // Black palette 1 low
-			color_table[11] = 24'h00AAAA; // Cyan
-			color_table[12] = 24'hAA00AA; // Magenta
-			color_table[13] = 24'hAAAAAA; // Light Gray
-			color_table[14] = 24'h000000; // Black palette 1 high
-			color_table[15] = 24'h55FFFF; // Light Cyan
-			color_table[16] = 24'hFF55FF; // Light Magenta
-			color_table[17] = 24'hFFFFFF; // White
-            color_table[18]  = 24'h000000; // Black  ColorIN mode 1
- 			color_table[19]  = 24'h00AA00; // Green
-			color_table[20]  = 24'hAA0000; // Red
-			color_table[21]  = 24'hAA5500; // Orange
-			color_table[22] = 24'h000000; // Black  ColorIn mode 2
-			color_table[23] = 24'h0000AA; // Dark Blue
-			color_table[24] = 24'h00AA00; // Dark Green
-			color_table[25] = 24'h00AAAA; // Cyan
-			color_table[26] = 24'hAA0000; // Dark Red
-			color_table[27] = 24'hAA00AA; // Magenta
-			color_table[28] = 24'hAA5500; // Brown
-			color_table[29] = 24'hAAAAAA; // Light Gray
-			color_table[30] = 24'h555555; // Dark Gray
-			color_table[31] = 24'h5555FF; // Light Blue
-			color_table[32] = 24'h55FF55; // Light Green
-			color_table[33] = 24'h55FFFF; // Light Cyan
-			color_table[34] = 24'hFF5555; // Light Red
-			color_table[35] = 24'hFF55FF; // Light Magenta
-			color_table[36] = 24'hFFFF55; // Yellow
-			color_table[37] = 24'hFFFFFF; // White
-            color_table[38] = 24'h000000; // Black - load palette
-            color_table[39] = 24'h00AAAA; // Cyan
-            color_table[40] = 24'hAA00AA; // Magenta
-            color_table[41] = 24'hAAAAAA; // Light Gray
+    
+            colour_table[0]  = 24'h000000; // Black
+            colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
+            colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
+            colour_table[3]  = 24'h00AA00; // Green
+            colour_table[4]  = 24'hAA0000; // Red
+            colour_table[5]  = 24'hAA5500; // Orange
+            colour_table[6] = 24'h000000; // Black - pcwplus mode 2
+            colour_table[7] = 24'h0000AA; // Dark Blue
+            colour_table[8] = 24'h00AA00; // Dark Green
+            colour_table[9] = 24'h00AAAA; // Cyan
+            colour_table[10] = 24'hAA0000; // Dark Red
+            colour_table[11] = 24'hAA00AA; // Magenta
+            colour_table[12] = 24'hAA5500; // Brown
+            colour_table[13] = 24'hAAAAAA; // Light Gray
+            colour_table[14] = 24'h555555; // Dark Gray
+            colour_table[15] = 24'h5555FF; // Light Blue
+            colour_table[16] = 24'h55FF55; // Light Green
+            colour_table[17] = 24'h55FFFF; // Light Cyan
+            colour_table[18] = 24'hFF5555; // Light Red
+            colour_table[19] = 24'hFF55FF; // Light Magenta
+            colour_table[20] = 24'hFFFF55; // Yellow
+            colour_table[21] = 24'hFFFFFF; // White
+            colour_table[22] = 24'h000000; // Black - load palette
+            colour_table[23] = 24'h00AAAA; // Cyan
+            colour_table[24] = 24'hAA00AA; // Magenta
+            colour_table[25] = 24'hAAAAAA; // Light Gray
 		end
-        color_table[38] = palette[127:104];
-        color_table[39] = palette[103:80];
-        color_table[40] = palette[79:56];
-        color_table[41] = palette[55:32];
+        colour_table[22] = palette[127:104];
+        colour_table[23] = palette[103:80];
+        colour_table[24] = palette[79:56];
+        colour_table[25] = palette[55:32];
         iow_prev <= iow;
 		int_mode_change <= 1'b0;
-		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==3'b101) begin
+		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==2'b10) begin
 			port80 <= cpudo;
 			if (cpudo >= 8'h10) begin
-				pcw_last_index_color_change <= 0;
-				pcw_last_index_color_change_component <=0;
+				pcw_last_index_colour_change <= 0;
+				pcw_last_index_colour_change_component <=0;
 			end
 		end
-		if(iow_falling_edge && cpua[7:0]==8'h81 && fake_colour_mode ==3'b101) begin
+		if(iow_falling_edge && cpua[7:0]==8'h81 && fake_colour_mode ==2'b10) begin
             port81 <= cpudo;
             if (port80 & 8'h20) begin
                 //change color by palette
-                indice_a_color = pcw_last_index_color_change;
-                if (indice_a_color > 4'hF) indice_a_color = 4'h0;
+                index_to_colour = pcw_last_index_colour_change;
+                if (index_to_colour > 4'hF) index_to_colour = 4'h0;
                 case (pcw_video_mode)
-					0: valor_a_cambiar = indice_a_color;
-					1: valor_a_cambiar = (indice_a_color) + 18;
-					2: valor_a_cambiar = (indice_a_color) + 22;
-					3: reset_conditional <= 1'b1;
+					0: value_to_change = index_to_colour;
+					1: value_to_change = (index_to_colour) + 2;
+					2: value_to_change = (index_to_colour) + 6;
+					3: value_to_change = (index_to_colour) + 6;
 				endcase
-
+                // blue values
                     case (cpudo % 4)
                         0: blue_256 = 8'h00;
                         1: blue_256 = 8'h55;
@@ -472,7 +439,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         3: blue_256 = 8'hFF;
                     endcase
 
-                // Calcula los valores de verde en función del índice
+                // green values
                     case ((cpudo / 4) % 8)
                         0: green_256 = 8'h00;
                         1: green_256 = 8'h24;
@@ -484,7 +451,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         7: green_256 = 8'hFF;
                     endcase
 
-                // Calcula los valores de rojo en función del índice
+                // red values
                     case (cpudo / 32)
                         0: red_256 = 8'h00;
                         1: red_256 = 8'h24;
@@ -496,33 +463,33 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         7: red_256 = 8'hFF;
                     endcase
 
-                // Combina los valores de rojo, verde y azul para formar el color de 24 bits
-                color_256 = {red_256, green_256, blue_256};
-		        color_table[valor_a_cambiar]  =color_256;
-                pcw_last_index_color_change <= pcw_last_index_color_change + 1;
+                // join the values 
+                colour_256 = {red_256, green_256, blue_256};
+		        colour_table[value_to_change]  =colour_256;
+                pcw_last_index_colour_change <= pcw_last_index_colour_change + 1;
             end else if (port80 & 8'h10) begin
 				// change color RGB
-				indice_a_color = pcw_last_index_color_change ;
+				index_to_colour = pcw_last_index_colour_change ;
 				case (pcw_video_mode)
-					0: valor_a_cambiar = indice_a_color % 2;
-					1: valor_a_cambiar = (indice_a_color % 4) + 18;
-					2: valor_a_cambiar = (indice_a_color % 16) + 24;
-					3: reset_conditional <= 1'b1;
+					0: value_to_change = index_to_colour % 2;
+					1: value_to_change = (index_to_colour % 4) + 2;
+					2: value_to_change = (index_to_colour % 16) + 6;
+					3: value_to_change = (index_to_colour % 16) + 6;
 				endcase
-				componente = pcw_last_index_color_change_component;
+				component = pcw_last_index_colour_change_component;
 				// Calculate the mask and shift value for the current component
-				rotaciones = componente * 8; // 0, 8, or 16 for R, G, B
-				mascara_quitar = ~(24'hFF << rotaciones); // Mask to clear the current component
-				valor_aplicar = cpudo << rotaciones; // Shift the new value to the correct position
+				rotation = component * 8; // 0, 8, or 16 for R, G, B
+				mask_to_apply = ~(24'hFF << rotation); // Mask to clear the current component
+				value_to_apply = cpudo << rotation; // Shift the new value to the correct position
 				// Update only the current component in the color_256 table
-				color_table[valor_a_cambiar] = (color_table[valor_a_cambiar] & mascara_quitar) | valor_aplicar;
+				colour_table[value_to_change] = (colour_table[value_to_change] & mask_to_apply) | value_to_apply;
 				// Increment the component counter
-				if (pcw_last_index_color_change_component >= 2'h2) begin
-					pcw_last_index_color_change_component <= 2'h0; // Wrap around after 2
-					pcw_last_index_color_change <= pcw_last_index_color_change + 1;
-					if (pcw_last_index_color_change >= 4'h0f) pcw_last_index_color_change <= 4'h0;
+				if (pcw_last_index_colour_change_component >= 2'h2) begin
+					pcw_last_index_colour_change_component <= 2'h0; // Wrap around after 2
+					pcw_last_index_colour_change <= pcw_last_index_colour_change + 1;
+					if (pcw_last_index_colour_change >= 4'h0f) pcw_last_index_colour_change <= 4'h0;
 				end else begin
-					pcw_last_index_color_change_component <= pcw_last_index_color_change_component + 1;
+					pcw_last_index_colour_change_component <= pcw_last_index_colour_change_component + 1;
 				end
             end else begin
                 // Cambio modo
@@ -911,81 +878,49 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         RGB = mono_colour;
         if(ypos <= fake_end) begin
             case(fake_colour_mode)
-                3'b000: RGB = mono_colour;
-                3'b001: begin    // CGA Palette 0 Low
+                2'b00: RGB = mono_colour;
+                2'b01: begin    // load palette
                     case(colour[3:2])
-						2'b00: RGB =  color_table[2];   // Black
-					    2'b01: RGB =  color_table[3];   // Green
-                        2'b10: RGB =  color_table[4];   // Red
-						2'b11: RGB =  color_table[5];   // Brown
-                    endcase                    
+						2'b00: RGB =  colour_table[22];   
+						2'b01: RGB =  colour_table[23];
+						2'b10: RGB =  colour_table[24];
+						2'b11: RGB =  colour_table[25];
+					endcase                  
                 end
-                3'b010: begin    // CGA Palette 0 High
-                    case(colour[3:2])
-                        2'b00: RGB =  color_table[6];   // Black
-                        2'b01: RGB =  color_table[7];   // Light Green
-                        2'b10: RGB =  color_table[8];   // Light Red
-						2'b11: RGB =  color_table[9];   // Yellow
-                    endcase                    
-                end
-                3'b011: begin    // CGA Palette 1 low
-                    case(colour[3:2])
-						2'b00: RGB =  color_table[10];   // Black
-                        2'b01: RGB =  color_table[11];   // Cyan
-                        2'b10: RGB =  color_table[12];   // Magenta
-                        2'b11: RGB =  color_table[13];   // light grey
-                    endcase 
-				end 
-				3'b100: begin    // CGA Palette 1 High
-                    case(colour[3:2])
-						2'b00: RGB = color_table[14];   // Black
-                        2'b01: RGB =  color_table[15];   // Light Cyan
-                        2'b10: RGB =  color_table[16];   // Light Magenta
-                        2'b11: RGB =  color_table[17];   // White
-                    endcase 
-                end 
-                3'b101: begin   // PCWPLUS 
+                2'b10: begin    // PCWPLUS 
                     if (pcw_video_mode ==0) begin
                         case(colour[3])
-                           1'b0: RGB = color_table[0];
-                           1'b1: RGB = color_table[1];
+                           1'b0: RGB = colour_table[0];
+                           1'b1: RGB = colour_table[1];
                         endcase
 					end else if (pcw_video_mode ==1) begin 
 						case(colour[3:2])
-							2'b00: RGB =  color_table[18];   
-							2'b01: RGB =  color_table[19];
-							2'b10: RGB =  color_table[20];
-							2'b11: RGB =  color_table[21];
+							2'b00: RGB =  colour_table[2];   
+							2'b01: RGB =  colour_table[3];
+							2'b10: RGB =  colour_table[4];
+							2'b11: RGB =  colour_table[5];
 						endcase
 					end else if (pcw_video_mode ==2) begin
 						case(colour[3:0])                            
- 							4'b0000: RGB =  color_table[22];
-							4'b0001: RGB =  color_table[23];
-							4'b0010: RGB =  color_table[24];
-							4'b0011: RGB =  color_table[25];
-							4'b0100: RGB =  color_table[26];
-							4'b0101: RGB =  color_table[27];
-							4'b0110: RGB =  color_table[28];
-							4'b0111: RGB =  color_table[29];
-							4'b1000: RGB =  color_table[30];
-							4'b1001: RGB =  color_table[31];
-							4'b1010: RGB =  color_table[32];
-							4'b1011: RGB =  color_table[33];
-							4'b1100: RGB =  color_table[34];
-							4'b1101: RGB =  color_table[35];
-							4'b1110: RGB =  color_table[36];
-							4'b1111: RGB =  color_table[37];
+ 							4'b0000: RGB =  colour_table[6];
+							4'b0001: RGB =  colour_table[7];
+							4'b0010: RGB =  colour_table[8];
+							4'b0011: RGB =  colour_table[9];
+							4'b0100: RGB =  colour_table[10];
+							4'b0101: RGB =  colour_table[11];
+							4'b0110: RGB =  colour_table[12];
+							4'b0111: RGB =  colour_table[13];
+							4'b1000: RGB =  colour_table[14];
+							4'b1001: RGB =  colour_table[15];
+							4'b1010: RGB =  colour_table[16];
+							4'b1011: RGB =  colour_table[17];
+							4'b1100: RGB =  colour_table[18];
+							4'b1101: RGB =  colour_table[19];
+							4'b1110: RGB =  colour_table[20];
+							4'b1111: RGB =  colour_table[21];
 						endcase 
 					end
 				end
-                3'b110: begin   // Palette load
-                    case(colour[3:2])
-						2'b00: RGB =  color_table[38];   
-						2'b01: RGB =  color_table[39];
-						2'b10: RGB =  color_table[40];
-						2'b11: RGB =  color_table[41];
-					endcase
-                end  
             endcase
         end
     end

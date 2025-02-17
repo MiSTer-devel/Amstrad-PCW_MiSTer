@@ -43,7 +43,7 @@ module video_controller(
     input wire inverse,             // Port F7 inverse video
     input wire disable_vid,         // Port F7 / F8 video disable
     input wire ntsc,                // Port F8 NTSC video flag
-    input wire [2:0] fake_colour_mode,         // Fake colour mode enabled
+    input wire [1:0] fake_colour_mode,         // Fake colour mode enabled
 	input wire [1:0] pcw_video_mode,     // Fake colour mode EGA enabled
     input wire [7:0] fake_end,      // Fake colour end row
     output logic [7:0] ypos,        // Current yposition for fake colour comparison logic
@@ -177,8 +177,8 @@ module video_controller(
              // else shift pixel register left
             else begin
                    // Shift every other pixel in fake colour mode
-               if (fake_colour_mode > 3'b000 && y <= fake_end) begin
-                    if(fake_colour_mode == 3'b101) begin
+               if (fake_colour_mode > 2'b00 && y <= fake_end) begin
+                    if(fake_colour_mode == 2'b10) begin
                         if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[3:0],4'b0} : pixel_reg;
                         else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0} : pixel_reg;                     
                         else  pixel_reg <= {pixel_reg[6:0], 1'b0};
@@ -186,7 +186,7 @@ module video_controller(
 				end else pixel_reg <= {pixel_reg[6:0], 1'b0}; 					
             end 
             // Load pixel register
-            pixel <= (fake_colour_mode >3'b000 && y <= fake_end ) ? pixel_reg[7:4] : {pixel_reg[7], pixel_reg[7],pixel_reg[7], pixel_reg[7]};
+            pixel <= (fake_colour_mode >2'b00 && y <= fake_end ) ? pixel_reg[7:4] : {pixel_reg[7], pixel_reg[7],pixel_reg[7], pixel_reg[7]};
         end
     end
     // Screen on and pixel to draw

@@ -206,13 +206,13 @@ localparam CONF_STR = {
 	"S1,DSK,Mount B:;",
 	"-;",
 	"O4,System Model,8256/8512,9256/9512+;",
-	"OF6,Memory Size,256K,512K,1MB,2MB;",
+	"OFG,Memory Size,256K,512K,1MB,2MB;",
 	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
 	"-;",	
 	"O56,Screen Color,White,Green,Amber;",
 	"O7,Video System,PAL,NTSC;",
 	"F3,gbp,Load Palette;",
-	"OQS,Fake Colour Palette,None,0 low, 0 high, 1 low, 1 high, PCWPLUS, loaded palette;",
+	"OQR,Fake Colour,None,Loaded palette, PCWPLUS;",
 	"OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%, CRT 75%;",
 	"OMN,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
@@ -376,6 +376,7 @@ boot_loader boot_loader
 	.model(status[4]),
 	.data(read_data)
 );
+// Palette download
 reg [127:0] palette = 128'h00000032cd320000ff00ffff00000000;
 
 always @(posedge clk_sys) begin
@@ -411,7 +412,7 @@ pcw_core pcw_core
 	.model(status[4]),
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
-	.fake_colour_mode(status[28:26]),
+	.fake_colour_mode(status[27:26]),
 	.dn_clk(clk_sys),
 	.dn_go(loader_download),
 	.dn_wr(loader_wr),
