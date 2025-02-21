@@ -49,7 +49,8 @@ module video_controller(
     output logic [7:0] ypos,        // Current yposition for fake colour comparison logic
 	output logic [16:0] vid_addr,   // Address Bus out for reading pixel data & roller ram
 	input wire [7:0] din,           // Data in for pixel data and roller ram
-
+    input  [3:0] VShift,
+    input  [3:0] HShift,
 	output logic [3:0] colour,
 	output logic ce_pix,
 	output logic hsync,
@@ -84,6 +85,8 @@ module video_controller(
         .o_vblank(vb), 
         .o_x(x), 
         .o_y(y),
+        .VShift(VShift),
+        .HShift(HShift),
         .o_active(active),
         .o_screenstart(screen_start),
         .o_linestart(line_start),

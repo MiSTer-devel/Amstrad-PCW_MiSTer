@@ -213,6 +213,8 @@ localparam CONF_STR = {
 	"O7,Video System,PAL,NTSC;",
 	"F3,gbp,Load Palette;",
 	"OQR,Fake Colour,None,Loaded palette, PCWPLUS;",
+	"oAD,CRT H-Sync Adjust,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"oEH,CRT V-Sync Adjust,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%, CRT 75%;",
 	"OMN,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
@@ -236,7 +238,7 @@ pll pll
 	.locked	  (locked)
 );
 
-wire [31:0] status;
+wire [63:0] status;
 wire  [1:0] buttons;
 wire        ioctl_download;
 wire        ioctl_wr;
@@ -402,7 +404,8 @@ pcw_core pcw_core
 	.hblank(HBlank),
 	.vblank(VBlank),
 	.ce_pix(ce_pix),
-
+	.HShift(status[45:42]),
+	.VShift(status[49:46]),
 	.LED(LED),
 	.audiomix(audiomix),
 
