@@ -899,12 +899,31 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         endcase
                     end else if (pcw_video_mode ==1) begin
                         case(colour[3:2])
-							2'b00: RGB =  colour_table[2];
+                            2'b00: RGB =  colour_table[2];
                             2'b01: RGB =  colour_table[3];
                             2'b10: RGB =  colour_table[4];
                             2'b11: RGB =  colour_table[5];
                         endcase
                     end else if (pcw_video_mode ==2) begin
+                        case(colour[3:0])
+                            4'b0000: RGB =  colour_table[6];
+                            4'b0001: RGB =  colour_table[7];
+                            4'b0010: RGB =  colour_table[8];
+                            4'b0011: RGB =  colour_table[9];
+                            4'b0100: RGB =  colour_table[10];
+                            4'b0101: RGB =  colour_table[11];
+                            4'b0110: RGB =  colour_table[12];
+                            4'b0111: RGB =  colour_table[13];
+                            4'b1000: RGB =  colour_table[14];
+                            4'b1001: RGB =  colour_table[15];
+                            4'b1010: RGB =  colour_table[16];
+                            4'b1011: RGB =  colour_table[17];
+                            4'b1100: RGB =  colour_table[18];
+                            4'b1101: RGB =  colour_table[19];
+                            4'b1110: RGB =  colour_table[20];
+                            4'b1111: RGB =  colour_table[21];
+                        endcase 
+                    end else if (pcw_video_mode ==3) begin
                         case(colour[3:0])
                             4'b0000: RGB =  colour_table[6];
                             4'b0001: RGB =  colour_table[7];

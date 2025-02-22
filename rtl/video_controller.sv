@@ -160,49 +160,66 @@ module video_controller(
 
     // Pixel memory lookup address controller
     logic [16:0] pixel_addr /* synthesis keep */;
+    //assign pixel_addr = active ? (pcw_video_mode == 3 ? line_addr + (x[10:4] << 3 ) : line_addr + (x[10:3] << 3 )) : 'b0;
+    //assign pixel_addr = active ? (pcw_video_mode == 3 ? line_addr + (x[10:3] << 4) : line_addr + (x[10:3] << 3)) : 'b0;
     assign pixel_addr = active ? line_addr + (x[10:3] << 3 ) : 'b0;
 
     // Address controller for vid_addr
     assign vid_addr = video_lookup ? lookup_addr : pixel_addr;
 
-    logic [7:0] pixel_reg = 'b0;
+    logic [15:0] pixel_reg = 'b0;
     logic [3:0] pixel;
-    
-
-
-
+    logic [7:0] attr_reg = 'b0;  //Atrubute register for PCWPlus 3 mode
+    logic [7:0] attr_shift_reg = 'b0;  // Displaced attribute register for PCWPlus 3 mode
     always @ (posedge clk_sys)
     begin
         if(ce_pix)
         begin
+            if (pcw_video_mode == 3) begin  // PCWPlus 3 mode
+                if (x[3:0] == 4'b0000 && active) begin
+                    attr_reg <= din;
+                end else if (x[3:0] == 4'b1000 && active) begin
+                    pixel_reg <= {{2{din[7]}}, {2{din[6]}}, {2{din[5]}}, {2{din[4]}}, {2{din[3]}}, {2{din[2]}}, {2{din[1]}}, {2{din[0]}}};  // Duplicamos los datos de píxeles;
+                     attr_shift_reg <= attr_reg; 
+                end else begin
+                    pixel_reg <= {pixel_reg[14:0], 1'b0}; 	 		
+                end
+            end else begin 
             // Every 8 pixels load shift reg
-            if(x[2:0]==3'b000 && active) pixel_reg <= din;
+            if(x[2:0]==3'b000 && active) pixel_reg <={din, din};
              // else shift pixel register left
             else begin
                    // Shift every other pixel in fake colour mode
                if (fake_colour_mode > 2'b00 && y <= fake_end) begin
                     if(fake_colour_mode == 2'b10) begin
-                        if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[3:0],4'b0} : pixel_reg;
-                        else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0} : pixel_reg;                     
-                        else  pixel_reg <= {pixel_reg[6:0], 1'b0};
-                    end else pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0} : pixel_reg;                     
-				end else pixel_reg <= {pixel_reg[6:0], 1'b0}; 					
-            end 
+                        if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
+                        else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ?  {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
+                        else  pixel_reg <= {pixel_reg[14:0], 1'b0};
+                    end else pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
+				end else pixel_reg <= {pixel_reg[14:0], 1'b0}; 					
+            end
+		end	
             // Load pixel register
-            pixel <= (fake_colour_mode >2'b00 && y <= fake_end ) ? pixel_reg[7:4] : {pixel_reg[7], pixel_reg[7],pixel_reg[7], pixel_reg[7]};
+            pixel <= (fake_colour_mode >2'b00 && y <= fake_end ) ? pixel_reg[15:12] : {pixel_reg[15], pixel_reg[15],pixel_reg[15], pixel_reg[15]};
         end
     end
     // Screen on and pixel to draw
     always_comb
     begin
-        if(inverse) begin
-            if(!disable_vid && active) colour = ~pixel;
-            else colour = 4'b1111;  // Disabled inverse video 
-        end    
-        else begin
-            if(!disable_vid && active) colour = pixel;
-            else colour = 4'b0000;     
+        if (pcw_video_mode == 3) begin  //PCWplus mode 3
+            if (!disable_vid && active) begin
+                if (pixel_reg[15]) colour = attr_shift_reg[3:0];
+                else colour =  attr_shift_reg[7:4];
+            end else colour = 4'b0000; 
+        end else begin 
+            if(inverse) begin
+                if(!disable_vid && active) colour = ~pixel;
+                else colour = 4'b1111;  // Disabled inverse video 
+            end else begin
+                if(!disable_vid && active) colour = pixel;
+                else colour = 4'b0000;
+            end
         end
-    end
+	end
     
 endmodule

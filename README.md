@@ -62,7 +62,7 @@ Many PCW adventure games contain graphics at the top, with a text interface befo
 * **F10** - Move colour line enable line down
 * **F11** - Toggle full screen colour mode on/off
 
-The mode allows loading 4-bit colour palettes, in the same format as the Gameboy core (GBP) or select PCWPlus support mode 1 or 2 in games that allow this colour modes.
+The mode allows loading 4-bit colour palettes, in the same format as the Gameboy core (GBP) or select PCWPlus support modes 1,2 and 3  in games that allow this colour modes.
 PCWPlus mode need to be activate before a compatible game load.
 
 ## Current issue
