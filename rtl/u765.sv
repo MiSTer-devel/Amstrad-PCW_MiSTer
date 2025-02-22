@@ -1097,6 +1097,8 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
+						//status[2] [3] = 1'b1; 
+						//status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end
@@ -1105,6 +1107,9 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
+						
+		                //status[2] [3] = 1'b1; 
+					    //status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end
@@ -1113,6 +1118,8 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
+						//status[2] [3] = 1'b1; 
+					    //status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end

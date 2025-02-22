@@ -13,7 +13,7 @@
 //
 // * Redistributions in synthesized form must reproduce the above copyright
 //   notice, this list of conditions and the following disclaimer in the
-//   documentation and/or other materials provided with the distribution.
+//   documentation and/or or materials provided with the distribution.
 //
 // * Neither the name of the author nor the names of other contributors may
 //   be used to endorse or promote products derived from this software without
@@ -39,12 +39,14 @@ module pcw_core(
     input wire reset,           // Reset
 	input wire clk_sys,         // 64 Mhz System Clock
 
-    output logic [17:0] RGB,    // RGB Output (6-6-6)     
+    output logic [23:0] RGB,    // RGB Output (8-8-8)     
 	output logic hsync,         // Horizontal sync
 	output logic vsync,         // Vertical sync
 	output logic hblank,        // Horizontal blanking
 	output logic vblank,        // Vertical blanking
     output logic ce_pix,        // Pixel clock
+    input  [3:0] VShift,
+    input  [3:0] HShift,
 
     output logic LED,           // LED output
     output logic [8:0] audiomix,
@@ -61,7 +63,7 @@ module pcw_core(
     input wire [1:0] memory_size,
     input wire dktronics,
     input wire [1:0] fake_colour_mode,
-
+    input wire [127:0] palette ,
     // SDRAM signals
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -120,9 +122,6 @@ module pcw_core(
     localparam MEM_1M = 2;
     localparam MEM_2M = 3;
 
-    logic fake_colour;
-    assign fake_colour = (fake_colour_mode != 2'b00);
-
     // Audio channels
     logic [7:0] ch_a;
     logic [7:0] ch_b;
@@ -144,7 +143,6 @@ module pcw_core(
     logic cpuclk, cpuclk_r;
     logic romrd,ramrd,ramwr;
     logic ior,iow,memr,memw;
-
     // Generate fractional CPU clock
     reg [15:0] cnt;
     always @(posedge clk_sys)
@@ -224,9 +222,10 @@ module pcw_core(
     assign kbd_sel = ram_b_addr[20:4]==17'b00000111111111111 && memr==1'b0 ? 1'b1 : 1'b0;
     logic daisy_sel;
     assign daisy_sel = ((cpua[7:0]==8'hfc || cpua[7:0]==8'hfd) & model) && (~ior | ~iow)? 1'b1 : 1'b0;
-
-    wire WAIT_n = sdram_access ? ram_ready : 1'b1;
-    // Create processor instance
+//
+  //  wire WAIT_n = sdram_access ? ram_ready : 1'b1;
+    wire WAIT_n = (ram_ready | (cpuiorq & cpumreq));
+	// Create processor instance
     T80pa cpu(
        	.RESET_n(~reset),
         .CLK(clk_sys),
@@ -265,7 +264,55 @@ module pcw_core(
     logic [7:0] portF6 /*synthesis noprune*/;     // Y scroll
     logic [7:0] portF7 /*synthesis noprune*/;     // Inverse / Disable
     logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
+	logic [7:0] port80 /*pcwmode  */;
+	logic [7:0] port81 /*colour*/;
+    logic [3:0] pcw_last_index_colour_change;
+    logic [1:0] pcw_last_index_colour_change_component;
+    logic [3:0] pcw_video_mode;
+    logic [3:0] index_to_colour;
+    logic [1:0] component; 
+    logic [23:0] value_to_change;
+    logic [23:0] mask_to_apply;
+    logic [23:0] value_to_apply;
+    logic [4:0] rotation;
+    logic [3:0] temp_cpudo; 
+	logic [23:0] colour_table [25:0];
+   logic [23:0] colour_256;  
+   logic [7:0] red_256, green_256, blue_256;
+	// // Signal to detect the falling edge of iow (valid write)
+reg iow_prev;
+wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
+    initial begin
+        // Colour in format 24'h
+        colour_table[0]  = 24'h000000; // Black
+        colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
+        colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
+        colour_table[3]  = 24'h00AA00; // Green
+        colour_table[4]  = 24'hAA0000; // Red
+        colour_table[5]  = 24'hAA5500; // Orange
+        colour_table[6] = 24'h000000; // Black - pcwplus mode 2
+        colour_table[7] = 24'h0000AA; // Dark Blue
+        colour_table[8] = 24'h00AA00; // Dark Green
+        colour_table[9] = 24'h00AAAA; // Cyan
+        colour_table[10] = 24'hAA0000; // Dark Red
+        colour_table[11] = 24'hAA00AA; // Magenta
+        colour_table[12] = 24'hAA5500; // Brown
+        colour_table[13] = 24'hAAAAAA; // Light Gray
+        colour_table[14] = 24'h555555; // Dark Gray
+        colour_table[15] = 24'h5555FF; // Light Blue
+        colour_table[16] = 24'h55FF55; // Light Green
+        colour_table[17] = 24'h55FFFF; // Light Cyan
+        colour_table[18] = 24'hFF5555; // Light Red
+        colour_table[19] = 24'hFF55FF; // Light Magenta
+        colour_table[20] = 24'hFFFF55; // Yellow
+        colour_table[21] = 24'hFFFFFF; // White
+        colour_table[22] = 24'h000000; // Black - load palette
+        colour_table[23] = 24'h00AAAA; // Cyan
+        colour_table[24] = 24'hAA00AA; // Magenta
+        colour_table[25] = 24'hAAAAAA; // Light Gray
+        iow_prev = 1;
 
+    end
     // Set CPU data in
     always_comb
     begin
@@ -274,28 +321,32 @@ module pcw_core(
             if(cpua[15:0]==16'h01fc) cpudi = model ? daisy_dout : 8'hff; 
             else begin		
                 casez(cpua[7:0])
-                        8'hf8: cpudi = portF8;
-                        8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
-                        8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
-                        8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
-                        8'he0: begin                // Joystick or CPS
-                            case(joy_type)
-                                JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
-                                JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
-                                default: cpudi = 8'h00;       // Dart and CPS
-                            endcase
-                        end
-                        // Kempston Mouse
-                        8'b110100??, 8'hd4: cpudi = kempston_dout;
-                        // AMX Mouse
-                        8'b10?000??: cpudi = amx_dout;
-                        // DK Tronics sound and joystick controller
-                        8'ha9: cpudi = dktronics ? dk_out : 8'hff;
-                        // Kempston Joystick
-                        8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
-                        // Floppy controller
-                        8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
-                        default: cpudi = 8'hff;             
+                    8'hf8: cpudi = portF8;
+                    8'hf4: cpudi = portF8;      // Timer interrupt counter will also clear
+                    8'hfc: cpudi = model ? daisy_dout : 8'hf8;       // Printer Controller
+                    8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
+                    8'he0: begin                // Joystick or CPS
+                        case(joy_type)
+                            JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
+                            JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
+                            default: cpudi = 8'h00;       // Dart and CPS
+                        endcase
+                    end
+                    // Kempston Mouse
+                    8'b110100??, 8'hd4: cpudi = kempston_dout;
+                    // AMX Mouse
+                    //  8'b10?000??: begin 
+                    8'b101000??:   cpudi = amx_dout; //assing only a0 ,a1 ,a2 and a3  
+                    // DK Tronics sound and joystick controller
+                    8'ha9: cpudi = dktronics ? dk_out : 8'hff;
+                    // Kempston Joystick
+                    8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
+                    // Floppy controller
+                    8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
+					8'h80:  cpudi = port80; 
+					8'h81:  cpudi = port81;
+                    default: cpudi = 8'hff;
+
                 endcase
             end
         end
@@ -303,31 +354,152 @@ module pcw_core(
             cpudi = kbd_sel ? kbd_data : ram_b_dout;
         end
     end
-
     assign portF8 = {1'b0,vblank,fdc_status_latch,~ntsc,timer_misses};
 
     logic int_mode_change = 1'b0;
-    // IO writing to register ports
-    always @(posedge clk_sys)
-    begin
-        if(reset)
-        begin
-            portF0 <= 8'h80;
-            portF1 <= 8'h81;
-            portF2 <= 8'h82;
-            portF3 <= 8'h83;
-            portF4 <= 8'hf1;
-            portF5 <= 8'h00;
-            portF6 <= 8'h00;
-            portF7 <= 8'h80;
-            disk_to_nmi <= 1'b0;
-            disk_to_int <= 1'b0;
-            tc <= 1'b0;
-            motor <= 1'b0;
-            speaker_enable <= 1'b0;
-        end
-        int_mode_change <= 1'b0;
+	always @(posedge clk_sys)
+	begin
+		if(reset) begin
+			port80 <= 8'h00;
+			port81 <= 8'h00;
+			pcw_last_index_colour_change <= 4'h0;
+			pcw_last_index_colour_change_component <= 2'h0;
+			pcw_video_mode <= 4'h0;
+			portF0 <= 8'h80;
+			portF1 <= 8'h81;
+			portF2 <= 8'h82;
+			portF3 <= 8'h83;
+			portF4 <= 8'hf1;
+			portF5 <= 8'h00;
+			portF6 <= 8'h00;
+			portF7 <= 8'h80;
+			disk_to_nmi <= 1'b0;
+			disk_to_int <= 1'b0;
+			tc <= 1'b0;
+			motor <= 1'b0;
+			speaker_enable <= 1'b0;
+            iow_prev <= 1;
+            pcw_video_mode <= 0;
+    
+            colour_table[0]  = 24'h000000; // Black
+            colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
+            colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
+            colour_table[3]  = 24'h00AA00; // Green
+            colour_table[4]  = 24'hAA0000; // Red
+            colour_table[5]  = 24'hAA5500; // Orange
+            colour_table[6] = 24'h000000; // Black - pcwplus mode 2
+            colour_table[7] = 24'h0000AA; // Dark Blue
+            colour_table[8] = 24'h00AA00; // Dark Green
+            colour_table[9] = 24'h00AAAA; // Cyan
+            colour_table[10] = 24'hAA0000; // Dark Red
+            colour_table[11] = 24'hAA00AA; // Magenta
+            colour_table[12] = 24'hAA5500; // Brown
+            colour_table[13] = 24'hAAAAAA; // Light Gray
+            colour_table[14] = 24'h555555; // Dark Gray
+            colour_table[15] = 24'h5555FF; // Light Blue
+            colour_table[16] = 24'h55FF55; // Light Green
+            colour_table[17] = 24'h55FFFF; // Light Cyan
+            colour_table[18] = 24'hFF5555; // Light Red
+            colour_table[19] = 24'hFF55FF; // Light Magenta
+            colour_table[20] = 24'hFFFF55; // Yellow
+            colour_table[21] = 24'hFFFFFF; // White
+            colour_table[22] = 24'h000000; // Black - load palette
+            colour_table[23] = 24'h00AAAA; // Cyan
+            colour_table[24] = 24'hAA00AA; // Magenta
+            colour_table[25] = 24'hAAAAAA; // Light Gray
+		end
+        colour_table[22] = palette[127:104];
+        colour_table[23] = palette[103:80];
+        colour_table[24] = palette[79:56];
+        colour_table[25] = palette[55:32];
+        iow_prev <= iow;
+		int_mode_change <= 1'b0;
+		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==2'b10) begin
+			port80 <= cpudo;
+			if (cpudo >= 8'h10) begin
+				pcw_last_index_colour_change <= 0;
+				pcw_last_index_colour_change_component <=0;
+			end
+		end
+		if(iow_falling_edge && cpua[7:0]==8'h81 && fake_colour_mode ==2'b10) begin
+            port81 <= cpudo;
+            if (port80 & 8'h20) begin
+                //change color by palette
+                index_to_colour = pcw_last_index_colour_change;
+                if (index_to_colour > 4'hF) index_to_colour = 4'h0;
+                case (pcw_video_mode)
+					0: value_to_change = index_to_colour;
+					1: value_to_change = (index_to_colour) + 2;
+					2: value_to_change = (index_to_colour) + 6;
+					3: value_to_change = (index_to_colour) + 6;
+				endcase
+                // blue values
+                    case (cpudo % 4)
+                        0: blue_256 = 8'h00;
+                        1: blue_256 = 8'h55;
+                        2: blue_256 = 8'hAA;
+                        3: blue_256 = 8'hFF;
+                    endcase
 
+                // green values
+                    case ((cpudo / 4) % 8)
+                        0: green_256 = 8'h00;
+                        1: green_256 = 8'h24;
+                        2: green_256 = 8'h49;
+                        3: green_256 = 8'h6D;
+                        4: green_256 = 8'h92;
+                        5: green_256 = 8'hB6;
+                        6: green_256 = 8'hDB;
+                        7: green_256 = 8'hFF;
+                    endcase
+
+                // red values
+                    case (cpudo / 32)
+                        0: red_256 = 8'h00;
+                        1: red_256 = 8'h24;
+                        2: red_256 = 8'h49;
+                        3: red_256 = 8'h6D;
+                        4: red_256 = 8'h92;
+                        5: red_256 = 8'hB6;
+                        6: red_256 = 8'hDB;
+                        7: red_256 = 8'hFF;
+                    endcase
+
+                // join the values 
+                colour_256 = {red_256, green_256, blue_256};
+		        colour_table[value_to_change]  =colour_256;
+                pcw_last_index_colour_change <= pcw_last_index_colour_change + 1;
+            end else if (port80 & 8'h10) begin
+				// change color RGB
+				index_to_colour = pcw_last_index_colour_change ;
+				case (pcw_video_mode)
+					0: value_to_change = index_to_colour % 2;
+					1: value_to_change = (index_to_colour % 4) + 2;
+					2: value_to_change = (index_to_colour % 16) + 6;
+					3: value_to_change = (index_to_colour % 16) + 6;
+				endcase
+				component = pcw_last_index_colour_change_component;
+				// Calculate the mask and shift value for the current component
+				rotation = component * 8; // 0, 8, or 16 for R, G, B
+				mask_to_apply = ~(24'hFF << rotation); // Mask to clear the current component
+				value_to_apply = cpudo << rotation; // Shift the new value to the correct position
+				// Update only the current component in the color_256 table
+				colour_table[value_to_change] = (colour_table[value_to_change] & mask_to_apply) | value_to_apply;
+				// Increment the component counter
+				if (pcw_last_index_colour_change_component >= 2'h2) begin
+					pcw_last_index_colour_change_component <= 2'h0; // Wrap around after 2
+					pcw_last_index_colour_change <= pcw_last_index_colour_change + 1;
+					if (pcw_last_index_colour_change >= 4'h0f) pcw_last_index_colour_change <= 4'h0;
+				end else begin
+					pcw_last_index_colour_change_component <= pcw_last_index_colour_change_component + 1;
+				end
+            end else begin
+                // Cambio modo
+                temp_cpudo = cpudo[3:0]; // Usar una variable temporal
+                if (temp_cpudo >= 4'h4) temp_cpudo = 4'h0;
+                pcw_video_mode <= temp_cpudo;
+            end
+        end 
         if(~iow && cpua[7:0]==8'hf0) portF0 <= cpudo;
         if(~iow && cpua[7:0]==8'hf1) portF1 <= cpudo;
         if(~iow && cpua[7:0]==8'hf2) portF2 <= cpudo;
@@ -387,7 +559,7 @@ module pcw_core(
     edge_det fdc_edge_det(.clk_sys(clk_sys), .signal(fdc_int), .pos_edge(fdc_pe), .neg_edge(fdc_ne));
     //  Drive FDC status latch (portF8) and NMI flag
     logic fdc_status_latch = 1'b0;
-//    logic clear_fdc_status = 1'b0;
+	//    logic clear_fdc_status = 1'b0;
     logic clear_nmi_flag = 1'b0;
     logic nmi_flag = 1'b0;
     always @(posedge clk_sys)
@@ -398,7 +570,7 @@ module pcw_core(
             if(disk_to_nmi) nmi_flag <= 1'b1;
         end
         else if(fdc_ne) fdc_status_latch <= 1'b0;
-//        if(clear_fdc_status) fdc_status_latch <= 1'b0;
+	//        if(clear_fdc_status) fdc_status_latch <= 1'b0;
         if(clear_nmi_flag) nmi_flag <= 1'b0;
     end
 
@@ -568,7 +740,7 @@ module pcw_core(
     // Addresses are made up of 4 bits of page number and 14 bits of offset
     // Port A is used for display memory access but can only access 128k
     logic [7:0] dpram_b_dout;
-    dpram #(.DATA(8), .ADDR(18)) main_mem(
+    dpram #(.DATA(8), .ADDR(17)) main_mem(
         // Port A is used for display memory access
         .a_clk(clk_sys),
         .a_wr(1'b0),        // Video never writes to display memory
@@ -578,8 +750,8 @@ module pcw_core(
 
         // Port B - used for CPU and download access
         .b_clk(clk_sys),
-        .b_wr(dn_go ? dn_wr : ~memw & ~|ram_b_addr[20:18]),
-        .b_addr(dn_go ? dn_addr[17:0] : ram_b_addr[17:0]),
+        .b_wr(dn_go ? dn_wr : ~memw & ~|ram_b_addr[20:17]),
+        .b_addr(dn_go ? dn_addr[16:0] : ram_b_addr[16:0]),
         .b_din(dn_go ? dn_data : cpudo),
         .b_dout(dpram_b_dout)
     );
@@ -600,7 +772,8 @@ module pcw_core(
         .ready(ram_ready)
     );
 
-    wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+    //wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+	wire sdram_access = |ram_b_addr[20:17];// && memory_size > MEM_256K;
     assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
     // Edge detectors for moving fake pixel line using F9 and F10 keys
@@ -612,7 +785,7 @@ module pcw_core(
     logic [7:0] fake_end;
         always @(posedge clk_sys)
     begin
-        if(reset) fake_end <= 8'd0;
+        if(reset) fake_end <= 8'd255;   //colour by default in colour modes
         else begin
             if(line_up_pe && fake_end > 0) fake_end <= fake_end - 8'd1;
             if(line_down_pe && fake_end < 255) fake_end <= fake_end + 8'd1;
@@ -626,11 +799,11 @@ module pcw_core(
         end
     end
 
-    logic [1:0] colour;
+    logic [3:0] colour;
 
-    logic [17:0] rgb_white;
-    logic [17:0] rgb_green;
-    logic [17:0] rgb_amber;
+    logic [23:0] rgb_white;
+    logic [23:0] rgb_green;
+    logic [23:0] rgb_amber;
 
     logic cpu_reg_set = 1'b0;
     logic [211:0] cpu_reg = 'b0;
@@ -646,7 +819,10 @@ module pcw_core(
         .inverse(inverse),
         .disable_vid(disable_vid),
         .ntsc(ntsc),
-        .fake_colour(fake_colour),
+        .VShift(VShift),
+        .HShift(HShift),
+        .fake_colour_mode(fake_colour_mode),
+        .pcw_video_mode(pcw_video_mode),
         .fake_end(fake_end),
         .ypos(ypos),
 
@@ -677,24 +853,24 @@ module pcw_core(
 
     // Video colour processing
     always_comb begin
-        rgb_white = 18'b111111111111110111;
-        if(colour==2'b00) rgb_white = 18'b000000000000000000;
-        else if(colour==2'b11) rgb_white = 18'b111111111111110111;
+        rgb_white = 24'hAAAAAA;
+        if(colour==4'b0000) rgb_white = 24'h000000;
+        else if(colour==4'b1111) rgb_white = 24'hFFFFFF;
     end
 
     always_comb begin
-        rgb_green = 18'b011001111111011001;
-        if(colour==2'b00) rgb_green = 18'b000000000000000000;
-        else if(colour==2'b11) rgb_green = 18'b011001111111011001;
+        rgb_green = 24'h00aa00;
+        if(colour==4'b0000) rgb_green = 24'h000000;
+        else if(colour==4'b1111) rgb_green = 24'h00aa00;
     end
 
     always_comb begin
-        rgb_amber = 18'b111111101100000000;
-        if(colour==2'b00) rgb_amber = 18'b000000000000000000;
-        else if(colour==2'b11) rgb_amber = 18'b111111101100000000;
+        rgb_amber = 24'hff5500;
+        if(colour==4'b0000) rgb_amber = 24'h000000;
+        else if(colour==4'b1111) rgb_amber = 24'hff5500;
     end
 
-    logic [17:0] mono_colour;
+    logic [23:0] mono_colour;
     always_comb begin
         if(disp_color==2'b00) mono_colour = rgb_white;
         else if(disp_color==2'b01) mono_colour = rgb_green;
@@ -704,32 +880,69 @@ module pcw_core(
 
     always_comb begin
         RGB = mono_colour;
-        if(fake_colour && ypos < fake_end) begin
+        if(ypos <= fake_end) begin
             case(fake_colour_mode)
                 2'b00: RGB = mono_colour;
-                2'b01: begin    // CGA Palette 0 Low
-                    case(colour)
-                        2'b00: RGB =  18'b000000000000000000;   // Black
-                        2'b01: RGB =  18'b000000101011000000;   // Dark Green
-                        2'b10: RGB =  18'b101011000000000000;   // Dark Red
-                        2'b11: RGB =  18'b101011010110000000;   // Brown
-                    endcase                    
+                2'b01: begin    // load palette
+                    case(colour[3:2])
+                        2'b00: RGB =  colour_table[22];
+                        2'b01: RGB =  colour_table[23];
+                        2'b10: RGB =  colour_table[24];
+                        2'b11: RGB =  colour_table[25];
+                    endcase
                 end
-                2'b10: begin    // CGA Palette 0 High
-                    case(colour)
-                        2'b00: RGB =  18'b000000000000000000;   // Black
-                        2'b01: RGB =  18'b010110111111010110;   // Light Green
-                        2'b10: RGB =  18'b111111010110010110;   // Light Red
-                        2'b11: RGB =  18'b111111111111010110;   // Yellow
-                    endcase                    
-                end
-                2'b11: begin    // CGA Palette 1 High
-                    case(colour)
-                        2'b00: RGB =  18'b000000000000000000;   // Black
-                        2'b01: RGB =  18'b010110111111111111;   // Cyan
-                        2'b10: RGB =  18'b111111010110111111;   // Magenta
-                        2'b11: RGB =  rgb_white;   // White
-                    endcase                    
+                2'b10: begin    // PCWPLUS 
+                    if (pcw_video_mode ==0) begin
+                        case(colour[3])
+                            1'b0: RGB = colour_table[0];
+                            1'b1: RGB = colour_table[1];
+                        endcase
+                    end else if (pcw_video_mode ==1) begin
+                        case(colour[3:2])
+                            2'b00: RGB =  colour_table[2];
+                            2'b01: RGB =  colour_table[3];
+                            2'b10: RGB =  colour_table[4];
+                            2'b11: RGB =  colour_table[5];
+                        endcase
+                    end else if (pcw_video_mode ==2) begin
+                        case(colour[3:0])
+                            4'b0000: RGB =  colour_table[6];
+                            4'b0001: RGB =  colour_table[7];
+                            4'b0010: RGB =  colour_table[8];
+                            4'b0011: RGB =  colour_table[9];
+                            4'b0100: RGB =  colour_table[10];
+                            4'b0101: RGB =  colour_table[11];
+                            4'b0110: RGB =  colour_table[12];
+                            4'b0111: RGB =  colour_table[13];
+                            4'b1000: RGB =  colour_table[14];
+                            4'b1001: RGB =  colour_table[15];
+                            4'b1010: RGB =  colour_table[16];
+                            4'b1011: RGB =  colour_table[17];
+                            4'b1100: RGB =  colour_table[18];
+                            4'b1101: RGB =  colour_table[19];
+                            4'b1110: RGB =  colour_table[20];
+                            4'b1111: RGB =  colour_table[21];
+                        endcase 
+                    end else if (pcw_video_mode ==3) begin
+                        case(colour[3:0])
+                            4'b0000: RGB =  colour_table[6];
+                            4'b0001: RGB =  colour_table[7];
+                            4'b0010: RGB =  colour_table[8];
+                            4'b0011: RGB =  colour_table[9];
+                            4'b0100: RGB =  colour_table[10];
+                            4'b0101: RGB =  colour_table[11];
+                            4'b0110: RGB =  colour_table[12];
+                            4'b0111: RGB =  colour_table[13];
+                            4'b1000: RGB =  colour_table[14];
+                            4'b1001: RGB =  colour_table[15];
+                            4'b1010: RGB =  colour_table[16];
+                            4'b1011: RGB =  colour_table[17];
+                            4'b1100: RGB =  colour_table[18];
+                            4'b1101: RGB =  colour_table[19];
+                            4'b1110: RGB =  colour_table[20];
+                            4'b1111: RGB =  colour_table[21];
+                        endcase 
+                    end
                 end
             endcase
         end
@@ -757,7 +970,8 @@ module pcw_core(
 
     // AMX mouse driver
     logic [7:0] amx_dout;
-    wire amx_sel = ~ior && (cpua[7:2]==6'b101000 || cpua[7:2]==6'b100000) && mouse_type==MOUSE_AMX;
+    //wire amx_sel = ~ior && (cpua[7:2]==6'b101000 || cpua[7:2]==6'b100000) && mouse_type==MOUSE_AMX; // only ports A0,A1,A2,A3
+    wire amx_sel = ~ior && (cpua[7:2]==6'b101000) && mouse_type==MOUSE_AMX;
     amx_mouse amx_mouse(
         .sel(amx_sel),
         .addr(cpua[1:0]),
@@ -818,18 +1032,14 @@ module pcw_core(
     ym2149 soundchip(
         .DI(cpudo),
         .DO(dk_out),
-
-        .BDIR(dk_busdir),
+		.BDIR(dk_busdir),
         .BC(dk_bc),
         .SEL(1'b0),
         .MODE(1'b0),
-
-        .CHANNEL_A(ch_a),
+	    .CHANNEL_A(ch_a),
         .CHANNEL_B(ch_b),
         .CHANNEL_C(ch_c),
-
-        .IOA_in(dkjoy_io),
-
+	      .IOA_in(dkjoy_io),
         .CE(snd_clk & dktronics),
         .RESET(reset),
         .CLK(clk_sys)
@@ -891,6 +1101,7 @@ module pcw_core(
         .sd_buff_din(sd_buff_din),
         .sd_buff_wr(sd_dout_strobe)
     );
+
 
 endmodule
 

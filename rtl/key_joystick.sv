@@ -158,6 +158,7 @@ end
 
 assign shiftstate = capslock | shifted;
 // Translate PC keyboard presses into PCW keyboard presses
+
 always @(posedge clk_sys) begin
     // Clear all key states on a reset
 	if(reset) begin
@@ -455,7 +456,8 @@ always @(posedge clk_sys) begin
 				repeat_count <= 0;
 			end
 			8'h78 : begin
-				toggle_full <= pressed; // F11 (PC) -> toggle full
+				//toggle_full <= pressed; // F11 (PC) -> toggle full
+				toggle_full <= ~toggle_full;  // Invertir el valor actual de toggle_full
 			end			
 		endcase
 	end     // End input strobe
