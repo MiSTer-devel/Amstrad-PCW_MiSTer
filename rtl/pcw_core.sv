@@ -287,13 +287,13 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         colour_table[0]  = 24'h000000; // Black
         colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
         colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
-        colour_table[3]  = 24'h00AA00; // Green
-        colour_table[4]  = 24'hAA0000; // Red
-        colour_table[5]  = 24'hAA5500; // Orange
-        colour_table[6] = 24'h000000; // Black - pcwplus mode 2
-        colour_table[7] = 24'h0000AA; // Dark Blue
-        colour_table[8] = 24'h00AA00; // Dark Green
-        colour_table[9] = 24'h00AAAA; // Cyan
+        colour_table[3]  = 24'h55FFFF; // Light Cyan
+        colour_table[4]  = 24'hFF55FF; // Light Magenta
+        colour_table[5]  = 24'hFFFFFF; // White
+        colour_table[6]  = 24'h000000; // Black - pcwplus mode 2
+        colour_table[7]  = 24'h0000AA; // Dark Blue
+        colour_table[8]  = 24'h00AA00; // Dark Green
+        colour_table[9]  = 24'h00AAAA; // Cyan
         colour_table[10] = 24'hAA0000; // Dark Red
         colour_table[11] = 24'hAA00AA; // Magenta
         colour_table[12] = 24'hAA5500; // Brown
@@ -383,10 +383,10 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     
             colour_table[0]  = 24'h000000; // Black
             colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
-            colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
-            colour_table[3]  = 24'h00AA00; // Green
-            colour_table[4]  = 24'hAA0000; // Red
-            colour_table[5]  = 24'hAA5500; // Orange
+            colour_table[2] = 24'h000000; // Black
+            colour_table[3] = 24'h55FFFF; // Light Cyan
+            colour_table[4] = 24'hFF55FF; // Light Magenta
+            colour_table[5] = 24'hFFFFFF; // White
             colour_table[6] = 24'h000000; // Black - pcwplus mode 2
             colour_table[7] = 24'h0000AA; // Dark Blue
             colour_table[8] = 24'h00AA00; // Dark Green
@@ -417,7 +417,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==2'b10) begin
 			port80 <= cpudo;
 			if (cpudo >= 8'h10) begin
-				pcw_last_index_colour_change <= 0;
+				pcw_last_index_colour_change <= (port80 % 16);
 				pcw_last_index_colour_change_component <=0;
 			end
 		end
@@ -773,7 +773,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     );
 
     //wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
-	wire sdram_access = |ram_b_addr[20:17];// && memory_size > MEM_256K;
+	wire sdram_access = |ram_b_addr[20:17]; // && memory_size > MEM_256K;
     assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
     // Edge detectors for moving fake pixel line using F9 and F10 keys
