@@ -62,6 +62,10 @@ source sys/sys_analog.tcl
 source files.qip
 set_global_assignment -name ENABLE_SIGNALTAP ON
 set_global_assignment -name USE_SIGNALTAP_FILE traces/trace_disk_summary.stp
+set_global_assignment -name VERILOG_FILE rtl/psg.v
+set_global_assignment -name SDC_FILE PCW.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pcw_starter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ce_generator.sv
 set_global_assignment -name VERILOG_FILE "rtl/AY-3-891x/psg.v"
 set_global_assignment -name CDF_FILE jtag.cdf
 set_global_assignment -name QIP_FILE sys/sys.qip

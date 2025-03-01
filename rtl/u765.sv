@@ -285,8 +285,8 @@ always @(posedge clk_sys) begin
 	state_t i_command;
    	reg i_current_drive, i_scan_lock = 0;
 	reg [3:0] i_srt; //stepping rate
-//	reg [3:0] i_hut; //head unload time
-//	reg [6:0] i_hlt; //head load time
+	reg [3:0] i_hut; //head unload time
+	reg [6:0] i_hlt; //head load time
 	reg [7:0] i_c;
 	reg [7:0] i_h;
 	reg [7:0] i_r;
@@ -592,7 +592,7 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-	//					i_hut <= din[3:0];
+						i_hut <= din[3:0];
 						i_srt <= din[7:4];
 						state <= COMMAND_SPECIFY_WR;
 					end
@@ -600,7 +600,7 @@ always @(posedge clk_sys) begin
 
 				COMMAND_SPECIFY_WR:
 				if (~old_wr & wr & a0) begin
-	//				i_hlt <= din[7:1];
+					i_hlt <= din[7:1];
 					ndma_mode <= din[0];
 					state <= COMMAND_IDLE;
 				end
@@ -1097,8 +1097,6 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-						//status[2] [3] = 1'b1; 
-						//status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end
@@ -1107,9 +1105,6 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-						
-		                //status[2] [3] = 1'b1; 
-					    //status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end
@@ -1118,8 +1113,6 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-						//status[2] [3] = 1'b1; 
-					    //status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end

@@ -413,19 +413,19 @@ pcw_core pcw_core
 
 	.disp_color(status[6:5]),
 	.ntsc(status[7]),
-	.overclock(status[9:8]),
+	//.overclock(status[9:8]),
 	.model(status[4]),
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
 	.fake_colour_mode(status[27:26]),
-	.dn_clk(clk_sys),
-	.dn_go(loader_download),
-	.dn_wr(loader_wr),
-	.dn_addr(loader_addr),			// CPU = 0000-FFFF; cassette = 10000-1FFFF
-	.dn_data(loader_data),
+	//.dn_clk(clk_sys),
+	//.dn_go(loader_download),
+	//.dn_wr(loader_wr),
+	//.dn_addr(loader_addr),			// CPU = 0000-FFFF; cassette = 10000-1FFFF
+	//.dn_data(loader_data),
 
-	.execute_addr(execute_addr),
-	.execute_enable(execute_enable),
+	//.execute_addr(execute_addr),
+	//.execute_enable(execute_enable),
 
 	.img_mounted(img_mounted),
 	.img_readonly(img_readonly),
@@ -472,9 +472,9 @@ video_mixer #( .GAMMA(1)) video_mixer
 	.R({RGB[23:16]})
 );
 
-wire  [8:0] audiomix;
-
-assign AUDIO_L={audiomix,7'b0000000};
+wire  [13:0] audiomix;
+assign AUDIO_L={audiomix,2'b0};
+//assign AUDIO_L={1'b0,audiomix,1'b0};
 assign AUDIO_R=AUDIO_L;
 
 endmodule
