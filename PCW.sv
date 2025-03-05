@@ -199,6 +199,7 @@ video_freak video_freak
 	.SCALE(status[23:22])
 );
 
+//	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
 `include "build_id.v"
 localparam CONF_STR = {
 	"Amstrad PCW;;",
@@ -207,7 +208,7 @@ localparam CONF_STR = {
 	"-;",
 	"O4,System Model,8256/8512,9256/9512+;",
 	"OFG,Memory Size,256K,512K,1MB,2MB;",
-	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
+
 	"-;",
 	"P1,Video;",
 	"P1-;",	
@@ -428,14 +429,14 @@ pcw_core pcw_core
 	//.execute_enable(execute_enable),
 
 	.img_mounted(img_mounted),
-	.img_readonly(img_readonly),
+	//.img_readonly(img_readonly),
 	.img_size(img_size),
 	.density({1'b1, status[4]}),		// 8256/512 = A=SD, 9512+ A=DD
 
 	.sd_lba(sd_lba_0),
 	.sd_rd(sd_rd),
 	.sd_wr(sd_wr),
-	.sd_ack(sd_ack[0]|sd_ack[1]),
+	.sd_ack(sd_ack),
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din_0),
