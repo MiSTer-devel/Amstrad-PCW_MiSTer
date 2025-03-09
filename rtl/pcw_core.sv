@@ -372,7 +372,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             end
         end
         else begin
-            cpudi = kbd_sel ? kbd_data : ram_b_dout;
+            cpudi = kbd_sel ? kbd_data : memr ? 8'hff : ram_b_dout;
         end
     end
     assign portF8 = {1'b0,vblank,fdc_int_latch,~ntsc,timer_misses};
@@ -963,6 +963,26 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                             4'b1111: RGB =  colour_table[21];
                         endcase 
                     end
+                end
+                2'b11: begin    //ega
+                    case(colour[3:0])
+                        4'b0000: RGB =  colour_table[6];
+                        4'b0001: RGB =  colour_table[7];
+                        4'b0010: RGB =  colour_table[8];
+                        4'b0011: RGB =  colour_table[9];
+                        4'b0100: RGB =  colour_table[10];
+                        4'b0101: RGB =  colour_table[11];
+                        4'b0110: RGB =  colour_table[12];
+                        4'b0111: RGB =  colour_table[13];
+                        4'b1000: RGB =  colour_table[14];
+                        4'b1001: RGB =  colour_table[15];
+                        4'b1010: RGB =  colour_table[16];
+                        4'b1011: RGB =  colour_table[17];
+                        4'b1100: RGB =  colour_table[18];
+                        4'b1101: RGB =  colour_table[19];
+                        4'b1110: RGB =  colour_table[20];
+                        4'b1111: RGB =  colour_table[21];
+                    endcase 
                 end
             endcase
         end

@@ -193,9 +193,11 @@ module video_controller(
                if (fake_colour_mode > 2'b00 && y <= fake_end) begin
                     if(fake_colour_mode == 2'b10) begin
                         if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
-                        else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ?  {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
+                        else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ?  {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;
                         else  pixel_reg <= {pixel_reg[14:0], 1'b0};
-                    end else pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
+				    end 
+					else if (fake_colour_mode == 2'b11 ) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
+					else pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
 				end else pixel_reg <= {pixel_reg[14:0], 1'b0}; 					
             end
 		end	

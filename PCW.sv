@@ -215,7 +215,7 @@ localparam CONF_STR = {
 	"P1O56,Screen Color,White,Green,Amber;",
 	"P1O7,Video System,PAL,NTSC;",
 	"P1F3,gbp,Load Palette;",
-	"P1OQR,Fake Colour,None,Loaded palette, PCWPLUS;",
+	"P1OQR,Fake Colour,None,Loaded palette, PCWPLUS, EGA;",
 	"P1oAD,CRT H-Sync Adjust,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"P1oEH,CRT V-Sync Adjust,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"P1OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
@@ -474,7 +474,7 @@ video_mixer #( .GAMMA(1)) video_mixer
 );
 
 wire  [13:0] audiomix;
-assign AUDIO_L={audiomix,2'b0};
+assign AUDIO_L={audiomix[13:1],3'b0};
 //assign AUDIO_L={1'b0,audiomix,1'b0};
 assign AUDIO_R=AUDIO_L;
 
