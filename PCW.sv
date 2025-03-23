@@ -208,6 +208,7 @@ localparam CONF_STR = {
 	"-;",
 	"O4,System Model,8256/8512,9256/9512+;",
 	"OFG,Memory Size,256K,512K,1MB,2MB;",
+	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
 
 	"-;",
 	"P1,Video;",
@@ -414,7 +415,7 @@ pcw_core pcw_core
 
 	.disp_color(status[6:5]),
 	.ntsc(status[7]),
-	//.overclock(status[9:8]),
+	.overclock(status[9:8]),
 	.model(status[4]),
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
@@ -474,7 +475,7 @@ video_mixer #( .GAMMA(1)) video_mixer
 );
 
 wire  [13:0] audiomix;
-assign AUDIO_L={audiomix[13:1],3'b0};
+assign AUDIO_L={audiomix,2'b00};
 //assign AUDIO_L={1'b0,audiomix,1'b0};
 assign AUDIO_R=AUDIO_L;
 

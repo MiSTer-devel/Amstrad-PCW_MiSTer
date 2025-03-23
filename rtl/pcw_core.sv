@@ -63,6 +63,7 @@ module pcw_core(
     input wire dktronics,
     input wire [1:0] fake_colour_mode,
     input wire [127:0] palette ,
+    input wire [1:0] overclock,
     // SDRAM signals
 	 output        SDRAM_CLK,
 	 output        SDRAM_CKE,
@@ -123,12 +124,13 @@ module pcw_core(
 	 ce_generator ce_generator(
         .clk(clk_sys),
         .reset(reset),
+        .overclock(overclock),
         .cpu_ce_p(cpu_ce_p),
         .cpu_ce_n(cpu_ce_n),
         .sdram_clk_ref(sdram_clk_ref),
         .ce_16mhz(pix_stb),
         .ce_4mhz(disk_ce),
-		  .clk_2mhz(snd_clk),
+        .clk_2mhz(snd_clk),
         .ce_1mhz(snd_ce)
     ); 
 	 
@@ -263,14 +265,14 @@ module pcw_core(
         .A(cpua),
         .DI(cpudi),
         .DO(cpudo),
-		  .REG(cpu_reg),
+        .REG(cpu_reg),
         .DIR(cpu_reg_out),
         .DIRSet(cpu_reg_set)  
     );
 
     // Interrupt enable flag for timer interrupt check
-    logic iff1/* synthesis keep */;
-    assign iff1 = cpu_reg[210]/* synthesis keep */;
+   // logic iff1/* synthesis keep */;
+   // assign iff1 = cpu_reg[210]/* synthesis keep */;
     logic [3:0] timer_misses;
     logic motor = 0;          // Motor on off register
     logic disk_to_nmi = 0;  // if 1, disk generates nmi
@@ -531,69 +533,40 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         if(~iow && cpua[7:0]==8'hf7) portF7 <= cpudo;
         if(~iow && cpua[7:0]==8'hf8)
 		  // decode command for System Control Register
-				case(cpudo[3:0])
-					 4'd0: begin
-						  // Terminate bootstrap (do nothing)
-					 end
-					 4'd2: begin  // Disk to NMI
-						  disk_to_nmi <= 1'b1;
-						  disk_to_int <= 1'b0;
-						  int_mode_change <= 1'b1;
-					 end
-					 4'd3: begin  // Disk to INT
-						  disk_to_int <= 1'b1;
-						  disk_to_nmi <= 1'b0;
-						  int_mode_change <= 1'b1;
-					 end
-					 4'd4: begin  // Disconnect Disk Int/NMI
-						  disk_to_int <= 1'b0;
-						  disk_to_nmi <= 1'b0;
-						  int_mode_change <= 1'b1;
-					 end
-					 4'd5: begin  // Set FDC TC
-						  tc <= 1'b1;
-					 end
-					 4'd6: begin  // Clear FDC TC
-						  tc <= 1'b0;
-					 end
-					 4'd9: motor <= 1'b1;
-					 4'd10: motor <= 1'b0;
-					 4'd11: speaker_enable <= 1'b1;
-					 4'd12: speaker_enable <= 1'b0;
-					 default: begin
-						  // Optional default case
-					 end
-				endcase
-//        begin
-//            // decode command for System Control Register
-//            if(cpudo[3:0] == 4'd0) ; // Terminate bootstrap (do nothing)t
-//            else if(cpudo[3:0] == 4'd2) begin           // Disk to NMI
-//                disk_to_nmi <= 1'b1;
-//                disk_to_int <= 1'b0;
-//                int_mode_change <= 1'b1;
-//            end
-//            else if(cpudo[3:0] == 4'd3) begin           // Disk to INT
-//                disk_to_int <= 1'b1;
-//                disk_to_nmi <= 1'b0;
-//                int_mode_change <= 1'b1;
-//            end
-//            else if(cpudo[3:0] == 4'd4) begin           // Disconnect Disk Int/NMI
-//                disk_to_int <= 1'b0;
-//                disk_to_nmi <= 1'b0;
-//                int_mode_change <= 1'b1;
-//            end
-//            else if(cpudo[3:0] == 4'd5) begin           // Set FDC TC
-//                tc <= 1'b1;
-//            end            
-//            else if(cpudo[3:0] == 4'd6) begin           // Clear FDC TC
-//                tc <= 1'b0;
-//            end            
-//            else if(cpudo[3:0] == 4'd9) motor <= 1'b1;
-//            else if(cpudo[3:0] == 4'd10) motor <= 1'b0;
-//            else if(cpudo[3:0] == 4'd11) speaker_enable <= 1'b1;
-//            else if(cpudo[3:0] == 4'd12) speaker_enable <= 1'b0;
-//            //if(img_mounted) motor <= 0; // Reset on new image mounted
-//        end
+			case(cpudo[3:0])
+				4'd0: begin
+				// Terminate bootstrap (do nothing)
+				end
+				4'd2: begin  // Disk to NMI
+					disk_to_nmi <= 1'b1;
+					disk_to_int <= 1'b0;
+					int_mode_change <= 1'b1;
+				end
+				4'd3: begin  // Disk to INT
+					disk_to_int <= 1'b1;
+					disk_to_nmi <= 1'b0;
+					int_mode_change <= 1'b1;
+				end
+				4'd4: begin  // Disconnect Disk Int/NMI
+					disk_to_int <= 1'b0;
+					disk_to_nmi <= 1'b0;
+					int_mode_change <= 1'b1;
+				end
+				4'd5: begin  // Set FDC TC
+					tc <= 1'b1;
+				end
+				4'd6: begin  // Clear FDC TC
+					tc <= 1'b0;
+				end
+				4'd9: motor <= 1'b1;
+				4'd10: motor <= 1'b0;
+				4'd11: speaker_enable <= 1'b1;
+				4'd12: speaker_enable <= 1'b0;
+				default: begin
+					// Optional default case
+				end
+			endcase
+
     end
 
     // detect fdc interrupt edge
@@ -767,12 +740,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             2'b11: ram_b_addr = portF3[7] ? pcw_ram_b_addr : ~memw ? {3'b0,cpc_write_ram_b_addr} : {3'b0,cpc_read_ram_b_addr}; 
         endcase
     end
-
-    // DPRAM - Only support 256K of memory while using dpram
-    // Addresses are made up of 4 bits of page number and 14 bits of offset
-    // Port A is used for display memory access but can only access 128k
     logic [7:0] dpram_b_dout;
-    dpram #(.DATA(8), .ADDR(17)) main_mem(
+    dpram #(.DATA(8), .ADDR(18)) main_mem(
         // Port A is used for display memory access
         .a_clk(clk_sys),
         .a_wr(1'b0),        // Video never writes to display memory
@@ -782,8 +751,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 
         // Port B - used for CPU and download access
         .b_clk(clk_sys),
-        .b_wr(dn_active ? dn_wr : ~memw & ~|ram_b_addr[20:17]),
-        .b_addr(dn_active ? dn_addr[16:0] : ram_b_addr[16:0]),
+        .b_wr(dn_active ? dn_wr : ~memw & ~|ram_b_addr[20:18]),
+        .b_addr(dn_active ? dn_addr[17:0] : ram_b_addr[17:0]),
         .b_din(dn_active ? dn_data : cpudo),
         .b_dout(dpram_b_dout)
     );
@@ -804,8 +773,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         .ready(sdram_ready)
     );
 
-    //wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
-	wire sdram_access = |ram_b_addr[20:17]; // && memory_size > MEM_256K;
+    wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
     assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
     // Edge detectors for moving fake pixel line using F9 and F10 keys
@@ -900,7 +868,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 
     always_comb begin
         RGB = mono_colour;
-        if(ypos <= fake_end) begin
+    
+        if ((ypos == 0 && fake_end > 0) || (ypos > 0 && ypos - 1 < fake_end) || (ypos > 0 && ypos == fake_end)) begin    //fix first and last line in color mode problably a simple solution can found (previous bug visible with use of f9, f10 and f11)
             case(fake_colour_mode)
                 2'b00: RGB = mono_colour;
                 2'b01: begin    // load palette
@@ -1010,8 +979,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 
     // AMX mouse driver
     logic [7:0] amx_dout;
-    //wire amx_sel = ~ior && (cpua[7:2]==6'b101000 || cpua[7:2]==6'b100000) && mouse_type==MOUSE_AMX; // only ports A0,A1,A2,A3
-    wire amx_sel = ~ior && (cpua[7:2]==6'b101000) && mouse_type==MOUSE_AMX;
+    wire amx_sel = ~ior && (cpua[7:2]==6'b101000) && mouse_type==MOUSE_AMX; // only ports A0,A1,A2,A3
     amx_mouse amx_mouse(
         .sel(amx_sel),
         .addr(cpua[1:0]),
@@ -1131,16 +1099,13 @@ psg soundchip(
         .tc(tc),
         .density(density),
         .activity_led(LED),
-		  //.fast(1),
-
         .img_mounted(img_mounted),
         .img_size(img_size[31:0]),
         .img_wp(2'b0),
         .sd_lba(sd_lba),
         .sd_rd(sd_rd),
         .sd_wr(sd_wr),
-		  .sd_ack(sd_ack),
-        //.sd_ack(sd_ack[1]|sd_ack[0]),
+        .sd_ack(sd_ack),
         .sd_buff_addr(sd_buff_addr),
         .sd_buff_dout(sd_buff_dout),
         .sd_buff_din(sd_buff_din),

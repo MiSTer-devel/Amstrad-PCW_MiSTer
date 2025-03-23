@@ -48,8 +48,7 @@ module key_joystick
 									// [10]  - toggles with every press/release
 	input wire   [7:0] joy0,        // Joystick 0
 	input wire   [7:0] joy1,        // Joystick 1
-	input wire 		   keymouse,	  // Keymouse in use
-
+	input wire 		   keymouse,	// Keymouse in use
 	// Mouse functions
 	input wire		   mouse_left,
 	input wire		   mouse_middle,
@@ -57,6 +56,7 @@ module key_joystick
 	input wire signed [8:0] mouse_x,
 	input wire signed [8:0] mouse_y,
 	input wire mouse_pulse,
+
 
     input wire         lk1,         // Link 1 on motherboard - Doesn't do selftest if 1
     input wire         lk2,         // Link 2 on motherboard
@@ -77,15 +77,10 @@ integer		 repeat_count;
 logic  [7:0] keys[15:0];
 logic        pressed = 0;
 logic  [7:0] code;
+logic		 shiftstate = 0;
 logic		 extended = 0;
 logic        shifted = 0;
 logic        capslock = 0;
-logic        shiftstate;
-logic caps_pressed_prev = 0; // Para detectar transiciones
-logic extra_state = 1'b1;      // Estado de la tecla EXTRA (comienza activo)
-logic extra_pressed_prev = 0;  // Para detectar transiciones
-
-assign shiftstate = capslock | shifted;
 
 // Magnitude
 logic [6:0] dxm, dym;
@@ -102,7 +97,6 @@ begin
 	old_pulse <= mouse_pulse;
 
 	if(reset) begin
-	   
 		dxp <= 7'd0; // dx != dy for better mouse detection
 		dyp <= 7'd0;
 	end
@@ -162,7 +156,9 @@ always @(posedge clk_sys) begin
 	end
 end
 
-// Process keyboard input with combined case for code, pressed, and extended state
+assign shiftstate = capslock | shifted;
+// Translate PC keyboard presses into PCW keyboard presses
+
 always @(posedge clk_sys) begin
     // Clear all key states on a reset
 	if(reset) begin
@@ -186,750 +182,308 @@ always @(posedge clk_sys) begin
 		line_down <= 1'b0;
 	end
 
-    // Main keyboard processing using combined code, pressed, and extended
+    // Keyboard processing Main
 	if(input_strobe) begin
-        // Use a combined case statement for {code, pressed, extended}
-        casez({code, pressed, extended})
-            // LEFT SHIFT key handling
-            {8'h12, 1'b1, 1'b0}: begin 
-                keys[2][5] <= 1'b1;   // LEFT SHIFT (PC)
-                shifted    <= 1'b1;
-            end
-            {8'h12, 1'b0, 1'b0}: begin 
-                keys[2][5] <= 1'b0;   // LEFT SHIFT (PC) released
-                shifted    <= 1'b0;
-            end
-            // PRT SCR key handling (extended LEFT SHIFT)
-            {8'h12, 1'b1, 1'b1}: begin 
-                keys[1][1] <= 1'b1;   // PTR (PCW)
-            end
-            {8'h12, 1'b0, 1'b1}: begin 
-                keys[1][1] <= 1'b0;   // PTR (PCW) released
-            end
-            
-            // RIGHT SHIFT key handling
-            {8'h59, 1'b1, 1'bz}: begin
-                keys[2][5]   <= 1'b1; // RIGHT SHIFT (PC)
-                shifted      <= 1'b1;
-                keys[12][5]  <= lk2;  // For 3FFC
-                keys[14][5]  <= lk2;  // For 3FFE
-                keys[15][5]  <= lk2;  // For 3FFF
-            end
-            {8'h59, 1'b0, 1'bz}: begin
-                keys[2][5]   <= 1'b0; // RIGHT SHIFT (PC) released
-                shifted      <= 1'b0;
-                keys[12][5]  <= 1'b0; // For 3FFC
-                keys[14][5]  <= 1'b0; // For 3FFE
-                keys[15][5]  <= 1'b0; // For 3FFF
-            end
-            
-            // ALT key handling
-            {8'h14, 1'b1, 1'bz}: keys[10][7] <= 1'b1;
-            {8'h14, 1'b0, 1'bz}: keys[10][7] <= 1'b0;
-            
-            // CTRL (PC) -> EXTRA (PCW)
-             {8'h11, 1'b1, 1'bz}: keys[10][1] <= 1'b1;
-             {8'h11, 1'b0, 1'bz}: keys[10][1] <= 1'b0;
-            
-            // F1 (PC) -> F1/F2 (PCW)
-            {8'h05, 1'b1, 1'bz}: begin
-                keys[0][2]  <= 1'b1;
-                keys[12][1] <= 1'b1; // For 3FFC
-            end
-            {8'h05, 1'b0, 1'bz}: begin
-                keys[0][2]  <= 1'b0;
-                keys[12][1] <= 1'b0; // For 3FFC
-            end
-            
-            // F2 (PC) -> F1/F2 (PCW) with shift
-            {8'h06, 1'b1, 1'bz}: begin
-                keys[0][2]  <= 1'b1;
-                keys[2][5]  <= 1'b1; // LEFT SHIFT
-                shifted     <= 1'b1;
-            end
-            {8'h06, 1'b0, 1'bz}: begin
-                keys[0][2]  <= 1'b0;
-                keys[2][5]  <= 1'b0; // LEFT SHIFT released
-                shifted     <= 1'b0;
-            end
-            
-            // F3 (PC) -> F3/F4 (PCW)
-            {8'h04, 1'b1, 1'bz}: begin
-                keys[0][0]  <= 1'b1;
-                keys[12][0] <= 1'b1; // For 3FFC
-            end
-            {8'h04, 1'b0, 1'bz}: begin
-                keys[0][0]  <= 1'b0;
-                keys[12][0] <= 1'b0; // For 3FFC
-            end
-            
-            // F4 (PC) -> F3/F4 (PCW) with shift
-            {8'h0C, 1'b1, 1'bz}: begin
-                keys[0][0]  <= 1'b1;
-                keys[2][5]  <= 1'b1; // LEFT SHIFT
-                shifted     <= 1'b1;
-            end
-            {8'h0C, 1'b0, 1'bz}: begin
-                keys[0][0]  <= 1'b0;
-                keys[2][5]  <= 1'b0; // LEFT SHIFT released
-                shifted     <= 1'b0;
-            end
-            
-            // F5 (PC) -> F5/F6 (PCW)
-            {8'h03, 1'b1, 1'bz}: keys[10][0] <= 1'b1;
-            {8'h03, 1'b0, 1'bz}: keys[10][0] <= 1'b0;
-            
-            // F6 (PC) -> F5/F6 (PCW) with shift
-            {8'h0B, 1'b1, 1'bz}: begin
-                keys[10][0] <= 1'b1;
-                keys[2][5]  <= 1'b1; // LEFT SHIFT
-                shifted     <= 1'b1;
-            end
-            {8'h0B, 1'b0, 1'bz}: begin
-                keys[10][0] <= 1'b0;
-                keys[2][5]  <= 1'b0; // LEFT SHIFT released
-                shifted     <= 1'b0;
-            end
-            
-            // F7 (PC) -> F7/F8 (PCW)
-            {8'h83, 1'b1, 1'bz}: keys[10][4] <= 1'b1;
-            {8'h83, 1'b0, 1'bz}: keys[10][4] <= 1'b0;
-            
-            // F8 (PC) -> F7/F8 (PCW) with shift
-            {8'h0A, 1'b1, 1'bz}: begin
-                keys[10][4] <= 1'b1;
-                keys[2][5]  <= 1'b1; // LEFT SHIFT
-                shifted     <= 1'b1;
-            end
-            {8'h0A, 1'b0, 1'bz}: begin
-                keys[10][4] <= 1'b0;
-                keys[2][5]  <= 1'b0; // LEFT SHIFT released
-                shifted     <= 1'b0;
-            end
-            
-            // Alphabetic keys
-            {8'h1c, 1'b1, 1'bz}: begin 
-                keys[8][5]  <= 1'b1; // A
-                keys[12][2] <= lk2 ? 1'b1 : keys[12][2]; // For 3FFC
-                keys[14][0] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h1c, 1'b0, 1'bz}: begin 
-                keys[8][5]  <= 1'b0; // A
-                keys[12][2] <= lk2 ? 1'b0 : keys[12][2]; // For 3FFC
-                keys[14][0] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h32, 1'b1, 1'bz}: begin 
-                keys[6][6]  <= 1'b1; // B
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][1] <= 1'b1; // For 3FFF
-            end
-            {8'h32, 1'b0, 1'bz}: begin 
-                keys[6][6]  <= 1'b0; // B
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h21, 1'b1, 1'bz}: begin 
-                keys[7][6]  <= 1'b1; // C
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h21, 1'b0, 1'bz}: begin 
-                keys[7][6]  <= 1'b0; // C
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h23, 1'b1, 1'bz}: begin 
-                keys[7][5]  <= 1'b1; // D
-                keys[12][3] <= lk2 ? 1'b1 : keys[12][3]; // For 3FFC
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h23, 1'b0, 1'bz}: begin 
-                keys[7][5]  <= 1'b0; // D
-                keys[12][3] <= lk2 ? 1'b0 : keys[12][3]; // For 3FFC
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h24, 1'b1, 1'bz}: begin 
-                keys[7][2]  <= 1'b1; // E
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h24, 1'b0, 1'bz}: begin 
-                keys[7][2]  <= 1'b0; // E
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h2b, 1'b1, 1'bz}: begin 
-                keys[6][5]  <= 1'b1; // F
-                keys[14][0] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h2b, 1'b0, 1'bz}: begin 
-                keys[6][5]  <= 1'b0; // F
-                keys[14][0] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h34, 1'b1, 1'bz}: begin 
-                keys[6][4]  <= 1'b1; // G
-                keys[14][0] <= 1'b1; // For 3FFE
-                keys[15][0] <= 1'b1; // For 3FFF
-            end
-            {8'h34, 1'b0, 1'bz}: begin 
-                keys[6][4]  <= 1'b0; // G
-                keys[14][0] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h33, 1'b1, 1'bz}: begin 
-                keys[5][4]  <= 1'b1; // H
-                keys[14][0] <= 1'b1; // For 3FFE
-                keys[15][0] <= 1'b1; // For 3FFF
-            end
-            {8'h33, 1'b0, 1'bz}: begin 
-                keys[5][4]  <= 1'b0; // H
-                keys[14][0] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h43, 1'b1, 1'bz}: keys[4][3] <= 1'b1; // I
-            {8'h43, 1'b0, 1'bz}: keys[4][3] <= 1'b0; // I
-            
-            {8'h3b, 1'b1, 1'bz}: begin 
-                keys[5][5]  <= 1'b1; // J
-                keys[14][0] <= 1'b1; // For 3FFE
-                keys[15][0] <= 1'b1; // For 3FFF
-            end
-            {8'h3b, 1'b0, 1'bz}: begin 
-                keys[5][5]  <= 1'b0; // J
-                keys[14][0] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h42, 1'b1, 1'bz}: begin 
-                keys[4][5]  <= 1'b1; // K
-                keys[15][0] <= 1'b1; // For 3FFF
-            end
-            {8'h42, 1'b0, 1'bz}: begin 
-                keys[4][5]  <= 1'b0; // K
-                keys[15][0] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h4b, 1'b1, 1'bz}: begin 
-                keys[4][4]  <= 1'b1; // L
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][0] <= 1'b1; // For 3FFF
-            end
-            {8'h4b, 1'b0, 1'bz}: begin 
-                keys[4][4]  <= 1'b0; // L
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h3a, 1'b1, 1'bz}: begin 
-                keys[4][6]  <= 1'b1; // M
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][1] <= 1'b1; // For 3FFF
-            end
-            {8'h3a, 1'b0, 1'bz}: begin 
-                keys[4][6]  <= 1'b0; // M
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h31, 1'b1, 1'bz}: begin 
-                keys[5][6]  <= 1'b1; // N
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][1] <= 1'b1; // For 3FFF
-            end
-            {8'h31, 1'b0, 1'bz}: begin 
-                keys[5][6]  <= 1'b0; // N
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h44, 1'b1, 1'bz}: begin 
-                keys[4][2]  <= 1'b1; // O
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h44, 1'b0, 1'bz}: begin 
-                keys[4][2]  <= 1'b0; // O
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h4d, 1'b1, 1'bz}: begin 
-                keys[3][3]  <= 1'b1; // P
-                keys[14][3] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h4d, 1'b0, 1'bz}: begin 
-                keys[3][3]  <= 1'b0; // P
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h15, 1'b1, 1'bz}: begin 
-                keys[8][3]  <= 1'b1; // Q
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h15, 1'b0, 1'bz}: begin 
-                keys[8][3]  <= 1'b0; // Q
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h2d, 1'b1, 1'bz}: begin 
-                keys[6][2]  <= 1'b1; // R
-                keys[14][3] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h2d, 1'b0, 1'bz}: begin 
-                keys[6][2]  <= 1'b0; // R
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h1b, 1'b1, 1'bz}: begin 
-                keys[7][4]  <= 1'b1; // S
-                keys[12][4] <= lk2 ? 1'b1 : keys[12][4]; // For 3FFC
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h1b, 1'b0, 1'bz}: begin 
-                keys[7][4]  <= 1'b0; // S
-                keys[12][4] <= lk2 ? 1'b0 : keys[12][4]; // For 3FFC
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h2c, 1'b1, 1'bz}: keys[6][3] <= 1'b1; // T
-            {8'h2c, 1'b0, 1'bz}: keys[6][3] <= 1'b0; // T
-            
-            {8'h3c, 1'b1, 1'bz}: keys[5][2] <= 1'b1; // U
-            {8'h3c, 1'b0, 1'bz}: keys[5][2] <= 1'b0; // U
-            
-            {8'h2a, 1'b1, 1'bz}: begin 
-                keys[6][7]  <= 1'b1; // V
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h2a, 1'b0, 1'bz}: begin 
-                keys[6][7]  <= 1'b0; // V
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h1d, 1'b1, 1'bz}: begin 
-                keys[7][3]  <= 1'b1; // W
-                keys[12][0] <= lk2 ? 1'b1 : keys[12][0]; // For 3FFC
-                keys[14][3] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h1d, 1'b0, 1'bz}: begin 
-                keys[7][3]  <= 1'b0; // W
-                keys[12][0] <= lk2 ? 1'b0 : keys[12][0]; // For 3FFC
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h22, 1'b1, 1'bz}: begin 
-                keys[7][7]  <= 1'b1; // X
-                keys[12][1] <= lk2 ? 1'b1 : keys[12][1]; // For 3FFC
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h22, 1'b0, 1'bz}: begin 
-                keys[7][7]  <= 1'b0; // X
-                keys[12][1] <= lk2 ? 1'b0 : keys[12][1]; // For 3FFC
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            
-            {8'h35, 1'b1, 1'bz}: keys[5][3] <= 1'b1; // Y
-            {8'h35, 1'b0, 1'bz}: keys[5][3] <= 1'b0; // Y
-            
-            {8'h1a, 1'b1, 1'bz}: begin 
-                keys[8][7]  <= 1'b1; // Z
-                keys[14][1] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h1a, 1'b0, 1'bz}: begin 
-                keys[8][7]  <= 1'b0; // Z
-                keys[14][1] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            
-            // Number keys
-            {8'h16, 1'b1, 1'bz}: keys[8][0] <= 1'b1; // 1
-            {8'h16, 1'b0, 1'bz}: keys[8][0] <= 1'b0; // 1
-            
-            {8'h1e, 1'b1, 1'bz}: keys[8][1] <= 1'b1; // 2
-            {8'h1e, 1'b0, 1'bz}: keys[8][1] <= 1'b0; // 2
-            
-            {8'h26, 1'b1, 1'bz}: keys[7][1] <= 1'b1; // 3
-            {8'h26, 1'b0, 1'bz}: keys[7][1] <= 1'b0; // 3
-            
-            {8'h25, 1'b1, 1'bz}: keys[7][0] <= 1'b1; // 4
-            {8'h25, 1'b0, 1'bz}: keys[7][0] <= 1'b0; // 4
-            
-            {8'h2e, 1'b1, 1'bz}: keys[6][1] <= 1'b1; // 5
-            {8'h2e, 1'b0, 1'bz}: keys[6][1] <= 1'b0; // 5
-            
-            {8'h36, 1'b1, 1'bz}: keys[6][0] <= 1'b1; // 6
-            {8'h36, 1'b0, 1'bz}: keys[6][0] <= 1'b0; // 6
-            
-            {8'h3d, 1'b1, 1'bz}: keys[5][1] <= 1'b1; // 7
-            {8'h3d, 1'b0, 1'bz}: keys[5][1] <= 1'b0; // 7
-            
-            {8'h3e, 1'b1, 1'bz}: keys[5][0] <= 1'b1; // 8
-            {8'h3e, 1'b0, 1'bz}: keys[5][0] <= 1'b0; // 8
-            
-            {8'h46, 1'b1, 1'bz}: keys[4][1] <= 1'b1; // 9
-            {8'h46, 1'b0, 1'bz}: keys[4][1] <= 1'b0; // 9
-            
-            {8'h45, 1'b1, 1'bz}: keys[4][0] <= 1'b1; // 0
-            {8'h45, 1'b0, 1'bz}: keys[4][0] <= 1'b0; // 0
-            
-            // Special characters
-            // Comma/less than
-            {8'h41, 1'b1, 1'bz}: begin 
-                if (shiftstate) begin
-                    keys[3][4] <= 1'b1; // <
-                    keys[15][0] <= 1'b1; // For 3FFF
-                end else begin
-                    keys[4][7] <= 1'b1; // ,
-                    keys[14][2] <= 1'b1; // For 3FFE
-                    keys[15][1] <= 1'b1; // For 3FFF
-                end
-            end
-            {8'h41, 1'b0, 1'bz}: begin 
-                keys[3][4] <= 1'b0; // <
-                keys[4][7] <= 1'b0; // ,
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            
-            // Period/greater than
-            {8'h49, 1'b1, 1'bz}: begin 
-                if (shiftstate) begin
-                    keys[2][3] <= 1'b1; // >
-                    keys[15][0] <= 1'b1; // For 3FFF
-                end else begin
-                    keys[3][7] <= 1'b1; // .
-                    keys[14][3] <= 1'b1; // For 3FFE
-                    keys[15][1] <= 1'b1; // For 3FFF
-                end
-            end
-            {8'h49, 1'b0, 1'bz}: begin 
-                keys[2][3] <= 1'b0; // >
-                keys[3][7] <= 1'b0; // .
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            
-            // Other common keys
-            {8'h0d, 1'b1, 1'bz}: keys[8][4] <= 1'b1; // TAB
-            {8'h0d, 1'b0, 1'bz}: keys[8][4] <= 1'b0; // TAB
-            
-            {8'h76, 1'b1, 1'bz}: begin
-                keys[1][0] <= 1'b1; // ESCAPE (PC) -> EXIT (PCW)
-                keys[12][2] <= 1'b1; // For 3FFC
-            end
-            {8'h76, 1'b0, 1'bz}: begin
-                keys[1][0] <= 1'b0; // ESCAPE (PC) -> EXIT (PCW)
-                keys[12][2] <= 1'b0; // For 3FFC
-            end
-            
-            {8'h29, 1'b1, 1'bz}: begin
-                keys[5][7] <= 1'b1; // SPACE
-                keys[12][4] <= 1'b1; // For 3FFC
-                keys[13][5] <= 1'b1; // For 3FFD
-                keys[14][4] <= 1'b1; // For 3FFE
-                keys[15][4] <= 1'b1; // For 3FFF
-            end
-            {8'h29, 1'b0, 1'bz}: begin
-                keys[5][7] <= 1'b0; // SPACE
-                keys[12][4] <= 1'b0; // For 3FFC
-                keys[13][5] <= 1'b0; // For 3FFD
-                keys[14][4] <= 1'b0; // For 3FFE
-                keys[15][4] <= 1'b0; // For 3FFF
-            end
-            
-            // Numeric keypad handling
-            // NUM 0 and INSERT
-            {8'h70, 1'b1, 1'b0}: begin
-                keys[0][1] <= 1'b1; // NUM 0
-                keys[12][3] <= 1'b1; // For 3FFC
-            end
-            {8'h70, 1'b0, 1'b0}: begin
-                keys[0][1] <= 1'b0; // NUM 0
-                keys[12][3] <= 1'b0; // For 3FFC
-            end
-            {8'h70, 1'b1, 1'b1}: keys[1][2] <= 1'b1; // INS (PC) -> CUT (PCW)
-            {8'h70, 1'b0, 1'b1}: keys[1][2] <= 1'b0; // INS (PC) -> CUT (PCW)
-            
-            // NUM 1 and END
-            {8'h69, 1'b1, 1'b0}: begin
-                keys[1][7] <= 1'b1; // NUM 1
-                keys[13][2] <= 1'b1; // For 3FFD
-            end
-            {8'h69, 1'b0, 1'b0}: begin
-                keys[1][7] <= 1'b0; // NUM 1
-                keys[13][2] <= 1'b0; // For 3FFD
-            end
-            {8'h69, 1'b1, 1'b1}: keys[10][2] <= 1'b1; // END (PC) -> CANCEL (PCW)
-            {8'h69, 1'b0, 1'b1}: keys[10][2] <= 1'b0; // END (PC) -> CANCEL (PCW)
-            
-            // NUM 2 and DOWN ARROW
-            {8'h72, 1'b1, 1'b0}: begin
-                keys[0][7] <= 1'b1; // NUM 2
-                keys[13][4] <= 1'b1; // For 3FFD
-            end
-            {8'h72, 1'b0, 1'b0}: begin
-                keys[0][7] <= 1'b0; // NUM 2
-                keys[13][4] <= 1'b0; // For 3FFD
-            end
-            {8'h72, 1'b1, 1'b1}: keys[10][6] <= 1'b1; // DN ARROW (PC) -> NUM . (PCW)
-            {8'h72, 1'b0, 1'b1}: keys[10][6] <= 1'b0; // DN ARROW (PC) -> NUM . (PCW)
-            
-            // NUM 3
-            {8'h7a, 1'b1, 1'bz}: begin
-                keys[0][6] <= 1'b1; // NUM 3
-                keys[13][3] <= 1'b1; // For 3FFD
-            end
-            {8'h7a, 1'b0, 1'bz}: begin
-                keys[0][6] <= 1'b0; // NUM 3
-                keys[13][3] <= 1'b0; // For 3FFD
-            end
-            
-            // NUM 4 and LEFT ARROW
-            {8'h6b, 1'b1, 1'b0}: keys[1][5] <= 1'b1; // NUM 4
-            {8'h6b, 1'b0, 1'b0}: keys[1][5] <= 1'b0; // NUM 4
-            {8'h6b, 1'b1, 1'b1}: keys[1][7] <= 1'b1; // LF ARROW (PC) -> NUM 1 (PCW)
-            {8'h6b, 1'b0, 1'b1}: keys[1][7] <= 1'b0; // LF ARROW (PC) -> NUM 1 (PCW)
-            
-            // NUM 5
-            {8'h73, 1'b1, 1'bz}: begin
-                keys[1][6] <= 1'b1; // NUM 5
-                keys[13][1] <= 1'b1; // For 3FFD
-            end
-            {8'h73, 1'b0, 1'bz}: begin
-                keys[1][6] <= 1'b0; // NUM 5
-                keys[13][1] <= 1'b0; // For 3FFD
-            end
-            
-            // NUM 6 and RIGHT ARROW
-            {8'h74, 1'b1, 1'b0}: keys[0][5] <= 1'b1; // NUM 6
-            {8'h74, 1'b0, 1'b0}: keys[0][5] <= 1'b0; // NUM 6
-            {8'h74, 1'b1, 1'b1}: keys[0][6] <= 1'b1; // RT ARROW (PC) -> NUM 3 (PCW)
-            {8'h74, 1'b0, 1'b1}: keys[0][6] <= 1'b0; // RT ARROW (PC) -> NUM 3 (PCW)
-            
-            // NUM 7
-            {8'h6c, 1'b1, 1'bz}: keys[2][4] <= 1'b1; // NUM 7
-            {8'h6c, 1'b0, 1'bz}: keys[2][4] <= 1'b0; // NUM 7
-            
-            // NUM 8 and UP ARROW
-            {8'h75, 1'b1, 1'b0}: keys[1][4] <= 1'b1; // NUM 8
-            {8'h75, 1'b0, 1'b0}: keys[1][4] <= 1'b0; // NUM 8
-            {8'h75, 1'b1, 1'b1}: keys[1][6] <= 1'b1; // UP ARROW (PC) -> NUM 5 (PCW)
-            {8'h75, 1'b0, 1'b1}: keys[1][6] <= 1'b0; // UP ARROW (PC) -> NUM 5 (PCW)
-            
-            // NUM 9 and PAGE UP
-            {8'h7d, 1'b1, 1'b0}: keys[0][4] <= 1'b1; // NUM 9
-            {8'h7d, 1'b0, 1'b0}: keys[0][4] <= 1'b0; // NUM 9
-            {8'h7d, 1'b1, 1'b1}: keys[0][3] <= 1'b1; // PAGE UP (PC) -> PASTE (PCW)
-            {8'h7d, 1'b0, 1'b1}: keys[0][3] <= 1'b0; // PAGE UP (PC) -> PASTE (PCW)
-            
-            // NUM . and DELETE
-            {8'h71, 1'b1, 1'b0}: begin
-                keys[10][6] <= 1'b1; // NUM .
-                keys[13][0] <= 1'b1; // For 3FFD
-            end
-            {8'h71, 1'b0, 1'b0}: begin
-                keys[10][6] <= 1'b0; // NUM .
-                keys[13][0] <= 1'b0; // For 3FFD
-            end
-            {8'h71, 1'b1, 1'b1}: keys[2][0] <= 1'b1; // DEL (PC) -> ->DEL (PCW)
-            {8'h71, 1'b0, 1'b1}: keys[2][0] <= 1'b0; // DEL (PC) -> ->DEL (PCW)
-            
-            // ENTER keys
-            {8'h5a, 1'b1, 1'b0}: keys[2][2] <= 1'b1; // ENTER
-            {8'h5a, 1'b0, 1'b0}: keys[2][2] <= 1'b0; // ENTER
-            {8'h5a, 1'b1, 1'b1}: begin
-                keys[10][5] <= 1'b1; // NUM Enter
-                keys[12][5] <= 1'b1; // For 3FFC
-            end
-            {8'h5a, 1'b0, 1'b1}: begin
-                keys[10][5] <= 1'b0; // NUM Enter
-                keys[12][5] <= 1'b0; // For 3FFC
-            end
-            
-            // NUM + and -
-            {8'h79, 1'b1, 1'bz}: keys[2][7] <= 1'b1; // NUM [+]
-            {8'h79, 1'b0, 1'bz}: keys[2][7] <= 1'b0; // NUM [+]
-            {8'h7b, 1'b1, 1'bz}: keys[10][3] <= 1'b1; // NUM [-]
-            {8'h7b, 1'b0, 1'bz}: keys[10][3] <= 1'b0; // NUM [-]
-            
-            // BACKSPACE
-            {8'h66, 1'b1, 1'bz}: keys[9][7] <= 1'b1; // BACKSPACE (PC) -> <-DEL (PCW)
-            {8'h66, 1'b0, 1'bz}: keys[9][7] <= 1'b0; // BACKSPACE (PC) -> <-DEL (PCW)
-            
-            // HOME key -> COPY
-            {8'h6e, 1'b1, 1'b1}: keys[1][3] <= 1'b1; // HOME (PC) -> COPY (PCW)
-            {8'h6e, 1'b0, 1'b1}: keys[1][3] <= 1'b0; // HOME (PC) -> COPY (PCW)
-            
-            // CAPS LOCK -> SHIFT LOCK
- //           {8'h58, 1'b1, 1'bz}: begin
- //               keys[8][6] <= 1'b1; // CAPS LOCK (PC) -> SHIFT LOCK (PCW)
- //               capslock <= ~capslock; // Toggle capslock state
- //           end
- //           {8'h58, 1'b0, 1'bz}: keys[8][6] <= 1'b0; // CAPS LOCK (PC) -> SHIFT LOCK (PCW)
- 
-// CAPS LOCK -> SHIFT LOCK - Implementación de toggle adecuado
-{8'h58, 1'b1, 1'bz}: begin
-    // Solo actualizamos la señal sin afectar al estado de latch todavía
-    keys[8][6] <= 1'b1; // CAPS LOCK (PC) -> SHIFT LOCK (PCW)
-    if (!caps_pressed_prev) begin
-        // Solo togglamos el estado cuando detectamos flanco de subida
-        capslock <= ~capslock;
-        caps_pressed_prev <= 1'b1;
-    end
-end
-{8'h58, 1'b0, 1'bz}: begin
-    keys[8][6] <= 1'b0; // CAPS LOCK (PC) -> SHIFT LOCK (PCW) released
-    caps_pressed_prev <= 1'b0; // Resetea el detector de flanco para el próximo ciclo
-end
- 
-            // Other misc keys
-            {8'h0e, 1'b1, 1'bz}: keys[8][2] <= 1'b1; // ` (PC) -> STOP (PCW)
-            {8'h0e, 1'b0, 1'bz}: keys[8][2] <= 1'b0; // ` (PC) -> STOP (PCW)
-            {8'h4a, 1'b1, 1'bz}: begin
-                keys[3][6] <= 1'b1; // /
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][1] <= 1'b1; // For 3FFF
-            end
-            {8'h4a, 1'b0, 1'bz}: begin
-                keys[3][6] <= 1'b0; // /
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            {8'h52, 1'b1, 1'bz}: keys[2][6] <= 1'b1; // @
-            {8'h52, 1'b0, 1'bz}: keys[2][6] <= 1'b0; // @
-            {8'h54, 1'b1, 1'bz}: begin
-                keys[3][2] <= 1'b1; // [
-                keys[14][2] <= 1'b1; // For 3FFE
-                keys[15][2] <= 1'b1; // For 3FFF
-            end
-            {8'h54, 1'b0, 1'bz}: begin
-                keys[3][2] <= 1'b0; // [
-                keys[14][2] <= 1'b0; // For 3FFE
-                keys[15][2] <= 1'b0; // For 3FFF
-            end
-            {8'h5b, 1'b1, 1'bz}: begin
-                keys[2][1] <= 1'b1; // ]
-                keys[14][3] <= 1'b1; // For 3FFE
-                keys[15][3] <= 1'b1; // For 3FFF
-            end
-            {8'h5b, 1'b0, 1'bz}: begin
-                keys[2][1] <= 1'b0; // ]
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][3] <= 1'b0; // For 3FFF
-            end
-            {8'h4c, 1'b1, 1'bz}: begin
-                keys[3][5] <= 1'b1; // ;
-                keys[14][3] <= 1'b1; // For 3FFE
-                keys[15][0] <= 1'b1; // For 3FFF
-            end
-            {8'h4c, 1'b0, 1'bz}: begin
-                keys[3][5] <= 1'b0; // ;
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][0] <= 1'b0; // For 3FFF
-            end
-            {8'h4e, 1'b1, 1'bz}: keys[3][1] <= 1'b1; // -
-            {8'h4e, 1'b0, 1'bz}: keys[3][1] <= 1'b0; // -
-            {8'h55, 1'b1, 1'bz}: keys[3][0] <= 1'b1; // =
-            {8'h55, 1'b0, 1'bz}: keys[3][0] <= 1'b0; // =
-            
-            // Backslash/half key
-            {8'h5d, 1'b1, 1'bz}: begin
-                keys[2][6] <= 1'b1; // \ (PC) -> 1/2 (PCW)
-                keys[14][3] <= 1'b1; // For 3FFE
-                keys[15][1] <= 1'b1; // For 3FFF
-            end
-            {8'h5d, 1'b0, 1'bz}: begin
-                keys[2][6] <= 1'b0; // \ (PC) -> 1/2 (PCW)
-                keys[14][3] <= 1'b0; // For 3FFE
-                keys[15][1] <= 1'b0; // For 3FFF
-            end
-            
-            // Function keys for color control
-            {8'h01, 1'b1, 1'bz}: begin
-                up_key <= 1'b1;       // F9 (PC) -> move row up
-                repeat_count <= 0;
-            end
-            {8'h01, 1'b0, 1'bz}: begin
-                up_key <= 1'b0;       // F9 (PC) -> move row up released
-            end
-            
-            {8'h09, 1'b1, 1'bz}: begin
-                down_key <= 1'b1;     // F10 (PC) -> move row down
-                repeat_count <= 0;
-            end
-            {8'h09, 1'b0, 1'bz}: begin
-                down_key <= 1'b0;     // F10 (PC) -> move row down released
-            end
-            
-            {8'h78, 1'b1, 1'bz}: toggle_full <= 1'b1; // F11 (PC) -> toggle full
-            {8'h78, 1'b0, 1'bz}: toggle_full <= 1'b0; // F11 (PC) -> toggle full released
-            
-            // Default case for any unhandled keys
-            default: begin
-                // No action for unhandled keys
-            end
+		case(code)
+			8'h12: begin  
+                keys[2][5] <= pressed & ~extended; // LEFT SHIFT (PC)
+			    keys[1][1] <= pressed & extended; // PRT SCR (PC) -> PTR (PCW)
+                shifted <= pressed & ~extended;
+            end
+			8'h59: begin
+                keys[2][5]   <= pressed; // RIGHT SHIFT (PC)
+                shifted <= pressed;
+            end
+			8'h11: keys[10][7]  <= pressed; // ALT
+			8'h14: keys[10][1]  <= pressed; // CTRL (PC) -> EXTRA (PCW) 
+			8'h05: keys[0][2]   <= pressed; // F1 (PC) -> F1/F2 (PCW)
+			8'h06: begin
+				keys[0][2]   <= pressed; // F2 (PC) -> F1/F2 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
+				shifted <= pressed;
+			end
+			8'h04: keys[0][0]   <= pressed; // F3 (PC) -> F3/F4 (PCW)
+			8'h0C: begin
+				keys[0][0]   <= pressed; // F4 (PC) -> F3/F4 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
+				shifted <= pressed;
+			end				
+			8'h03: keys[10][0]  <= pressed; // F5 (PC) -> F5/F6 (PCW)
+			8'h0B: begin
+				keys[10][0]  <= pressed; // F6 (PC) -> F5/F6 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
+				shifted <= pressed;
+			end				
+			8'h83: keys[10][4]  <= pressed; // F7 (PC) -> F7/F8 (PCW)
+			8'h0A: begin
+				keys[10][4]  <= pressed; // F8 (PC) -> F7/F9 (PCW)
+				keys[2][5] <= pressed; // LEFT SHIFT (PC)
+				shifted <= pressed;
+			end				
+			8'h1c : keys[8][5] <= pressed; // A
+			8'h32 : keys[6][6] <= pressed; // B
+			8'h21 : keys[7][6] <= pressed; // C
+			8'h23 : keys[7][5] <= pressed; // D
+			8'h24 : keys[7][2] <= pressed; // E
+			8'h2b : keys[6][5] <= pressed; // F
+			8'h34 : keys[6][4] <= pressed; // G
+			
+			8'h33 : keys[5][4] <= pressed; // H
+			8'h43 : keys[4][3] <= pressed; // I
+			8'h3b : keys[5][5] <= pressed; // J
+			8'h42 : keys[4][5] <= pressed; // K
+			8'h4b : keys[4][4] <= pressed; // L
+			8'h3a : keys[4][6] <= pressed; // M
+			8'h31 : keys[5][6] <= pressed; // N
+			8'h44 : keys[4][2] <= pressed; // O
+			
+			8'h4d : keys[3][3] <= pressed; // P
+			8'h15 : keys[8][3] <= pressed; // Q
+			8'h2d : keys[6][2] <= pressed; // R
+			8'h1b : keys[7][4] <= pressed; // S
+			8'h2c : keys[6][3] <= pressed; // T
+			8'h3c : keys[5][2] <= pressed; // U
+			8'h2a : keys[6][7] <= pressed; // V
+			8'h1d : keys[7][3] <= pressed; // W
+			
+			8'h22 : keys[7][7] <= pressed; // X
+			8'h35 : keys[5][3] <= pressed; // Y
+			8'h1a : keys[8][7] <= pressed; // Z
+
+			8'h16 : keys[8][0] <= pressed; // 1
+            8'h1e : keys[8][1] <= pressed; // 2
+			8'h26 : keys[7][1] <= pressed; // 3
+			8'h25 : keys[7][0] <= pressed; // 4
+			8'h2e : keys[6][1] <= pressed; // 5
+			8'h36 : keys[6][0] <= pressed; // 6
+			8'h3d : keys[5][1] <= pressed; // 7
+			8'h3e : keys[5][0] <= pressed; // 8
+			8'h46 : keys[4][1] <= pressed; // 9
+			8'h45 : keys[4][0] <= pressed; // 0
+
+			8'h41 : begin
+                keys[3][4] <= pressed & shiftstate; // <
+                keys[4][7] <= pressed & ~shiftstate; // ,
+            end
+			8'h49 : begin
+                keys[2][3] <= pressed & shiftstate; // >
+                keys[3][7] <= pressed & ~shiftstate; // .
+            end
+
+			8'h0d : keys[8][4] <= pressed; // TAB
+			8'h76 : keys[1][0] <= pressed; // ESCAPE (PC) -> EXIT (PCW)
+			8'h29 : keys[5][7] <= pressed; // SPACE
+
+			8'h70 : begin
+                keys[0][1] <= pressed & ~extended; // NUM 0
+			    keys[1][2] <= pressed & extended; // INS (PC) -> CUT (PCW)
+            end
+			8'h69 : begin
+                keys[1][7] <= pressed; // NUM 1
+			    keys[10][2] <= pressed & extended; // END (PC) -> CANCEL (PCW)
+            end
+			8'h72 : begin
+                keys[0][7] <= pressed & ~extended; // NUM 2
+			    keys[10][6] <= pressed & extended; // DN ARROW (PC) -> NUM . (PCW)
+            end
+			8'h7a : keys[0][6] <= pressed; // NUM 3
+			8'h6b : begin
+                keys[1][5] <= pressed & ~extended; // NUM 4
+			    keys[1][7] <= pressed & extended; // LF ARROW (PC) -> NUM 1 (PCW)
+            end
+			8'h73 : keys[1][6] <= pressed; // NUM 5
+			8'h74 : begin
+                keys[0][5] <= pressed & ~extended; // NUM 6
+			    keys[0][6] <= pressed & extended; // RT ARROW (PC) -> NUM 3 (PCW)
+            end
+			8'h6c : keys[2][4] <= pressed; // NUM 7
+			8'h75 : begin
+                keys[1][4] <= pressed & ~extended; // NUM 8
+			    keys[1][6] <= pressed & extended; // UP ARROW (PC) -> NUM 5 (PCW)
+            end
+			8'h7d : begin
+                keys[0][4] <= pressed & ~extended; // NUM 9
+			    keys[0][3] <= pressed & extended; // PAGE UP (PC) -> PASTE (PCW)
+            end
+			8'h71 : begin
+                keys[10][6] <= pressed & ~extended; // NUM .
+			    keys[2][0] <= pressed & extended; // DEL (PC) -> ->DEL (PCW)
+            end
+			8'h5a : begin
+                keys[2][2] <= pressed & ~extended; // ENTER
+			    keys[10][5] <= pressed & extended; // NUM Enter
+            end
+			8'h79 : keys[2][7] <= pressed; // NUM [+]
+			8'h7b : keys[10][3] <= pressed; // NUM [-]
+
+            // Deletes
+			8'h66 : keys[9][7] <= pressed; // BACKSPACE (PC) -> <-DEL (PCW)
+
+            // WP keys
+			8'h6e : keys[1][3] <= pressed & extended; // HOME (PC) -> COPY (PCW)
+			8'h58 : begin
+                keys[8][6] <= pressed; // CAPS LOCK (PC) -> SHIFT LOCK (PCW)
+                capslock <= pressed ? ~capslock : capslock;
+            end
+            
+            // Other keys
+			8'h0e : keys[8][2] <= pressed; // ` (PC) -> STOP (PCW)
+			8'h4a : keys[3][6] <= pressed; // /
+            8'h52 : keys[2][6] <= pressed; // @
+			8'h54 : keys[3][2] <= pressed; // [
+			8'h5b : keys[2][1] <= pressed; // ]
+			8'h4c : keys[3][5] <= pressed; // ;
+			8'h4e : keys[3][1] <= pressed; // -
+			8'h55 : keys[3][0] <= pressed; // =
+		endcase
+
+        // Keyboard processing for combination keys in 3FFC
+		case(code)
+			8'h5a : keys[12][5] <= pressed & extended; // NUM Enter
+			8'h59 : keys[12][5] <= pressed & lk2; // RIGHT SHIFT (PC)
+            8'h29 : keys[12][4] <= pressed; // SPACE
+   			8'h1b : keys[12][4] <= pressed & lk2; // S
+			8'h70 : keys[12][3] <= pressed; // NUM 0
+			8'h23 : keys[12][3] <= pressed & lk2; // D
+			8'h76 : keys[12][2] <= pressed; // ESCAPE (PC) -> EXIT (PCW)
+			8'h1c : keys[12][2] <= pressed & lk2; // A
+			8'h05 : keys[12][1] <= pressed; // F1 (PC) -> F1/F2 (PCW)
+			8'h22 : keys[12][1] <= pressed & lk2; // X
+			8'h04 : keys[12][0] <= pressed; // F3 (PC) -> F3/F4 (PCW)
+			8'h1d : keys[12][0] <= pressed & lk2; // W
         endcase
+
+        // Keyboard processing for combination keys in 3FFD
+		case(code)
+            // Shadows into 3FFD
+            8'h29 : keys[13][5] <= pressed; // SPACE
+			8'h72 : keys[13][4] <= pressed; // NUM 2
+			8'h7a : keys[13][3] <= pressed; // NUM 3
+			8'h69 : keys[13][2] <= pressed; // NUM 1
+			8'h73 : keys[13][1] <= pressed; // NUM 5
+			8'h71 : keys[13][0] <= pressed; // NUM .
+        endcase
+
+        // Keyboard processing for combination keys in 3FFE
+		case(code)
+			8'h59 : keys[14][5] <= pressed & lk2; // RIGHT SHIFT (PC)
+            8'h29 : keys[14][4] <= pressed; // SPACE
+            // Bit 3
+			8'h1d : keys[14][3] <= pressed; // W
+			8'h2d : keys[14][3] <= pressed; // R
+			8'h4d : keys[14][3] <= pressed; // P
+			8'h5b : keys[14][3] <= pressed; // ]
+			8'h4c : keys[14][3] <= pressed; // ;
+			8'h49 : keys[14][3] <= pressed; // > & .
+			8'h5d : keys[14][3] <= pressed; // \ (PC) -> 1/2 (PCW)
+            // Bit 2
+			8'h15 : keys[14][2] <= pressed; // Q
+			8'h24 : keys[14][2] <= pressed; // E
+			8'h44 : keys[14][2] <= pressed; // O
+			8'h54 : keys[14][2] <= pressed; // [
+			8'h4b : keys[14][2] <= pressed; // L
+			8'h41 : keys[14][2] <= pressed; // < & ,
+			8'h4a : keys[14][2] <= pressed; // /
+            // Bit 1
+			8'h1a : keys[14][1] <= pressed; // Z
+			8'h22 : keys[14][1] <= pressed; // X
+			8'h21 : keys[14][1] <= pressed; // C
+			8'h2a : keys[14][1] <= pressed; // V
+			8'h32 : keys[14][1] <= pressed; // B
+			8'h31 : keys[14][1] <= pressed; // N
+			8'h3a : keys[14][1] <= pressed; // M
+            // Bit 0
+			8'h1c : keys[14][0] <= pressed; // A
+			8'h1b : keys[14][0] <= pressed; // S
+			8'h23 : keys[14][0] <= pressed; // D
+			8'h2b : keys[14][0] <= pressed; // F
+			8'h34 : keys[14][0] <= pressed; // G
+			8'h33 : keys[14][0] <= pressed; // H
+			8'h3b : keys[14][0] <= pressed; // J
+        endcase
+
+        // Keyboard processing for combination keys in 3FFF
+		case(code)
+			8'h59 : keys[15][5] <= pressed & lk2; // RIGHT SHIFT (PC)
+            8'h29 : keys[15][4] <= pressed; // SPACE
+            // Bit 3
+			8'h1d : keys[15][3] <= pressed; // W
+			8'h2d : keys[15][3] <= pressed; // R
+			8'h4d : keys[15][3] <= pressed; // P
+			8'h5b : keys[15][3] <= pressed; // ]
+			8'h1b : keys[15][3] <= pressed; // S
+			8'h2b : keys[15][3] <= pressed; // F
+			8'h22 : keys[15][3] <= pressed; // X
+			8'h2a : keys[15][3] <= pressed; // V
+            // Bit 2
+			8'h15 : keys[15][2] <= pressed; // Q
+			8'h24 : keys[15][2] <= pressed; // E
+			8'h44 : keys[15][2] <= pressed; // O
+			8'h54 : keys[15][2] <= pressed; // [
+			8'h1c : keys[15][2] <= pressed; // A
+			8'h23 : keys[15][2] <= pressed; // D
+			8'h1a : keys[15][2] <= pressed; // Z
+			8'h21 : keys[15][2] <= pressed; // C
+            // Bit 1
+			8'h32 : keys[15][1] <= pressed; // B
+			8'h31 : keys[15][1] <= pressed; // N
+			8'h3a : keys[15][1] <= pressed; // M
+			8'h41 : begin
+                keys[15][1] <= pressed & ~shiftstate; // ,
+			    keys[15][0] <= pressed & shiftstate; // < - Bit 0
+            end
+			8'h49 : begin
+                keys[15][1] <= pressed & ~shiftstate; // .
+                keys[15][0] <= pressed & shiftstate; // > - Bit 0
+            end
+			8'h4a : keys[15][1] <= pressed; // /
+			8'h5d : keys[15][1] <= pressed; // \ (PC) -> 1/2 (PCW)
+            // Bit 0
+			8'h33 : keys[15][0] <= pressed; // H
+			8'h3b : keys[15][0] <= pressed; // J
+			8'h42 : keys[15][0] <= pressed; // K
+			8'h4b : keys[15][0] <= pressed; // L
+   			8'h4c : keys[15][0] <= pressed; // ;
+        endcase
+		// Fake colour line control keys
+		case(code)
+			8'h01 : begin
+				up_key <= pressed;  // F9 (PC) -> move row up
+				repeat_count <= 0;
+			end
+			8'h09 : begin
+				down_key <= pressed; // F10 (PC) -> move row down
+				repeat_count <= 0;
+			end
+			8'h78 : begin
+				//toggle_full <= pressed; // F11 (PC) -> toggle full
+				toggle_full <= ~toggle_full;  // Invertir el valor actual de toggle_full
+			end			
+		endcase
 	end     // End input strobe
 
-	// Color line handler
 	line_down <= 1'b0;
 	line_up <= 1'b0;
-	
 	// Countdown timer for colour line handler
-	if(repeat_count > REPEAT_TIME && (up_key | down_key)) begin
+	if(repeat_count > REPEAT_TIME && (up_key | down_key))
+	begin
 		repeat_count <= 0;
 		line_up <= up_key;
 		line_down <= down_key;
 	end
-	else if(up_key | down_key) begin 
-		repeat_count <= repeat_count + 1;
-	end
+	else if(up_key | down_key) repeat_count <= repeat_count + 1;
 
-    // Set special flags and signals regardless of input_strobe
-    
-    // 3FFD special flags
+    // Special flags and signals
+    // 3FFD
     keys[13][7] <= ~lk2;
     keys[13][6] <= capslock;
-    
-    // 3FFE special flags
-    keys[14][7] <= lk3;
-    keys[14][6] <= lk1;
-    
-    // 3FFF special flags
+    // 3FFE
+    keys[14][7] <= ~lk3;
+    keys[14][6] <= ~lk1;
+    // 3FFF
     keys[15][7] <= 'b1;             // PCW keyboard transmitting
     keys[15][6] <= input_strobe;    // Update flag
 
-    // Joystick handling
-    
     // Joystick Driver 1 - 3FF9
     keys[9][5] <= joy0[5];          // Fire 2
     keys[9][4] <= joy0[4];          // Fire 1
@@ -945,6 +499,7 @@ end
     keys[11][2] <= joy1[1];          // Left
     keys[11][1] <= joy1[2];          // Down
     keys[11][0] <= joy1[3];          // Up
+
 end
 
 endmodule
