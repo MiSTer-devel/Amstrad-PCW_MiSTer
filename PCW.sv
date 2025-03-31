@@ -199,6 +199,7 @@ video_freak video_freak
 	.SCALE(status[23:22])
 );
 
+//	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
 `include "build_id.v"
 localparam CONF_STR = {
 	"Amstrad PCW;;",
@@ -208,13 +209,14 @@ localparam CONF_STR = {
 	"O4,System Model,8256/8512,9256/9512+;",
 	"OFG,Memory Size,256K,512K,1MB,2MB;",
 	"O89,Clockspeed (MHz),4.00(1x),8.00(2x),16.00(4x),32.00(x8);",
+
 	"-;",
 	"P1,Video;",
 	"P1-;",	
 	"P1O56,Screen Color,White,Green,Amber;",
 	"P1O7,Video System,PAL,NTSC;",
 	"P1F3,gbp,Load Palette;",
-	"P1OQR,Fake Colour,None,Loaded palette, PCWPLUS;",
+	"P1OQR,Fake Colour,None,Loaded palette, PCWPLUS, EGA;",
 	"P1oAD,CRT H-Sync Adjust,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"P1oEH,CRT V-Sync Adjust,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"P1OKL,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
@@ -418,24 +420,24 @@ pcw_core pcw_core
 	.memory_size(status[16:15]),
 	.dktronics(status[17]),
 	.fake_colour_mode(status[27:26]),
-	.dn_clk(clk_sys),
-	.dn_go(loader_download),
-	.dn_wr(loader_wr),
-	.dn_addr(loader_addr),			// CPU = 0000-FFFF; cassette = 10000-1FFFF
-	.dn_data(loader_data),
+	//.dn_clk(clk_sys),
+	//.dn_go(loader_download),
+	//.dn_wr(loader_wr),
+	//.dn_addr(loader_addr),			// CPU = 0000-FFFF; cassette = 10000-1FFFF
+	//.dn_data(loader_data),
 
-	.execute_addr(execute_addr),
-	.execute_enable(execute_enable),
+	//.execute_addr(execute_addr),
+	//.execute_enable(execute_enable),
 
 	.img_mounted(img_mounted),
-	.img_readonly(img_readonly),
+	//.img_readonly(img_readonly),
 	.img_size(img_size),
 	.density({1'b1, status[4]}),		// 8256/512 = A=SD, 9512+ A=DD
 
 	.sd_lba(sd_lba_0),
 	.sd_rd(sd_rd),
 	.sd_wr(sd_wr),
-	.sd_ack(sd_ack[0]|sd_ack[1]),
+	.sd_ack(sd_ack),
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din_0),
@@ -472,9 +474,9 @@ video_mixer #( .GAMMA(1)) video_mixer
 	.R({RGB[23:16]})
 );
 
-wire  [8:0] audiomix;
-
-assign AUDIO_L={audiomix,7'b0000000};
+wire  [13:0] audiomix;
+assign AUDIO_L={audiomix,2'b00};
+//assign AUDIO_L={1'b0,audiomix,1'b0};
 assign AUDIO_R=AUDIO_L;
 
 endmodule

@@ -478,8 +478,8 @@ always @(posedge clk_sys) begin
     keys[13][7] <= ~lk2;
     keys[13][6] <= capslock;
     // 3FFE
-    keys[14][7] <= lk3;
-    keys[14][6] <= lk1;
+    keys[14][7] <= ~lk3;
+    keys[14][6] <= ~lk1;
     // 3FFF
     keys[15][7] <= 'b1;             // PCW keyboard transmitting
     keys[15][6] <= input_strobe;    // Update flag

@@ -52,12 +52,12 @@ module u765 #(parameter CYCLES = 20'd4000, SPECCY_SPEEDLOCK_HACK = 0)
 	output logic 	 activity_led,	// Activity LED
 
 	input wire  [1:0] img_mounted, // signaling that new image has been mounted
-	input wire        img_wp,      // write protect. latched at img_mounted
+	input wire  [1:0] img_wp,      // write protect. latched at img_mounted
 	input wire [31:0] img_size,    // size of image in bytes
 	output logic [31:0] sd_lba,
 	output logic  [1:0] sd_rd,
 	output logic  [1:0] sd_wr,
-	input wire       sd_ack,
+	input wire    [1:0] sd_ack,
 	input wire [8:0] sd_buff_addr,
 	input wire [7:0] sd_buff_dout,
 	output logic [7:0] sd_buff_din,
@@ -182,7 +182,7 @@ u765_dpram sbuf
 	// SD card read / write access
 	.address_a({ds0, sd_buff_type,hds,sd_buff_addr}),
 	.data_a(sd_buff_dout),
-	.wren_a(sd_buff_wr & sd_ack),
+	.wren_a(sd_buff_wr & sd_ack[ds0]),
 	.q_a(sd_buff_din),
 	// FDC module read write access for processor
 	.address_b({ds0, sd_buff_type,hds,buff_addr}),
@@ -238,6 +238,8 @@ assign dout = a0 ? m_data : m_status;
 assign old_state = last_state;
 assign activity_led = (phase == PHASE_EXECUTE);
 
+
+
 always @(posedge clk_sys) begin
 
    //prefix internal CE protected registers with i_, so it's easier to write constraints
@@ -274,6 +276,7 @@ always @(posedge clk_sys) begin
 	reg [15:0] i_bytes_to_read;
 	reg [2:0] i_substate;
 	reg [1:0] old_mounted;
+	reg [1:0] old_ready;
 	reg [15:0] i_track_offset;
 	reg [5:0] ack;
 	reg sd_busy;
@@ -283,10 +286,10 @@ always @(posedge clk_sys) begin
 	reg [7:0] status[4] = '{0, 0, 0, 0}; //st0-3
 	state_t state;
 	state_t i_command;
-   	reg i_current_drive, i_scan_lock = 0;
+   reg i_current_drive, i_scan_lock = 0;
 	reg [3:0] i_srt; //stepping rate
-//	reg [3:0] i_hut; //head unload time
-//	reg [6:0] i_hlt; //head load time
+	reg [3:0] i_hut; //head unload time
+	reg [6:0] i_hlt; //head load time
 	reg [7:0] i_c;
 	reg [7:0] i_h;
 	reg [7:0] i_r;
@@ -311,25 +314,33 @@ always @(posedge clk_sys) begin
 	//new image mounted
 	for(int i=0;i<2;i++) begin 
 		old_mounted[i] <= img_mounted[i];
-		if(old_mounted[i] & ~img_mounted[i]) begin
-			image_wp[i] <= img_wp;
+		old_ready[i] <= ready[i];
+		if(~old_mounted[i] & img_mounted[i]) begin
+			image_wp[i] <= img_wp[i];
 			image_size[i] <= img_size;
 			image_scan_state[i] <= |img_size; //hacky
 			image_ready[i] <= 0;
 			image_density[i] <= (img_size > 250000) ? CF2DD : CF2; // very hacky
-			int_state[i] <= 0;
+			int_state[i] <= 1;
 			seek_state[i] <= 0;
 			next_weak_sector[i] <= 0;
 			i_current_sector_pos[i] <= '{ 0, 0 };
 		end
+		if(old_ready[i] & ~ready[i]) begin
+		   int_state[i] <= 1;
+			image_scan_state[i] <= 0; 
+			image_ready[i] <= 0;
+			seek_state[i] <= 0;
+			next_weak_sector[i] <= 0;
+			i_current_sector_pos[i] <= '{ 0, 0 };
+         pcn[i] <= 1;
+		end
 	end
 
-	if (ce) begin
-		i_current_drive <= ~i_current_drive;
-	end
 
    //Process the image file
 	if (ce) begin
+	   i_current_drive <= ~i_current_drive;
 		case (image_scan_state[i_current_drive])
 			0: ;//no new image
 			1: //read the first 512 byte
@@ -419,7 +430,7 @@ always @(posedge clk_sys) begin
 		ndma_mode <= 1'b1;
 	end else if (ce) begin
 
-		ack <= {ack[4:0], sd_ack};
+		ack <= {ack[4:0], sd_ack[ds0]};
 		if(ack[5:4] == 'b01)	begin
 			sd_rd <= 0;
 			sd_wr <= 0;
@@ -544,10 +555,10 @@ always @(posedge clk_sys) begin
 				COMMAND_SENSE_INTERRUPT_STATUS1:
 				if (~old_rd & rd & a0) begin
 					if (int_state[0]) begin
-						m_data <= ( ncn[0] == pcn[0] && ready[0] && image_ready[0] ) ? 8'h20 : 8'he8; //drive A: interrupt
+						m_data <= ( ncn[0] == pcn[0] && image_ready[0] ) ? 8'h20 : 8'he8; //drive A: interrupt
 						state <= COMMAND_SENSE_INTERRUPT_STATUS2;
 					end else if (int_state[1]) begin
-						m_data <= ( ncn[1] == pcn[1] && ready[1] && image_ready[1] ) ? 8'h21 : 8'he9; //drive B: interrupt
+						m_data <= ( ncn[1] == pcn[1] && image_ready[1] ) ? 8'h21 : 8'he9; //drive B: interrupt
 						state <= COMMAND_SENSE_INTERRUPT_STATUS2;
 					end else begin
 						m_data <= 8'h80;
@@ -555,14 +566,17 @@ always @(posedge clk_sys) begin
 					end;
 				end
 
-				COMMAND_SENSE_INTERRUPT_STATUS2:
-				if (~old_rd & rd & a0) begin
-					m_data <= int_state[0] ? 
-						((image_density[0]==CF2 && density[0]==CF2DD)  ? pcn[0] << 1 : pcn[0]) :  
-						((image_density[1]==CF2 && density[1]==CF2DD) ? pcn[1] << 1 : pcn[1]);
-					int_state[int_state[0] ? 0 : 1] <= 0;
-					state <= COMMAND_IDLE;
-				end
+COMMAND_SENSE_INTERRUPT_STATUS2:
+if (~old_rd & rd & a0) begin
+    // Devolver el PCN de la unidad que está reportando la interrupción
+    m_data <= int_state[0] ? 
+        ((image_density[0]==CF2 && density[0]==CF2DD) ? pcn[0] << 1 : pcn[0]) :  
+        ((image_density[1]==CF2 && density[1]==CF2DD) ? pcn[1] << 1 : pcn[1]);
+    
+    //int_state <= '{ 0, 0 }; // Limpiar ambas interrupciones
+	 int_state[int_state[0] ? 0 : 1] <= 0;
+    state <= COMMAND_IDLE;
+end
 
 				COMMAND_SENSE_DRIVE_STATUS:
 				begin
@@ -580,9 +594,9 @@ always @(posedge clk_sys) begin
 					m_data <= { 1'b0,
 								ready[ds0] & image_wp[ds0],         //write protected
 								motor[ds0] & available[ds0],        //ready - needed for controller detection
-								image_ready[ds0] & !pcn[ds0],       //track 0
-								image_ready[ds0] & image_sides[ds0],//two sides
-								image_ready[ds0] & hds,             //head address
+								ready[ds0] & !pcn[ds0],       //track 0
+								ready[ds0] & image_sides[ds0],//two sides
+								ready[ds0] & hds,             //head address
 								1'b0,                               //us1
 								ds0 };                              //us0
 					state <= COMMAND_IDLE;
@@ -592,7 +606,7 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-	//					i_hut <= din[3:0];
+						i_hut <= din[3:0];
 						i_srt <= din[7:4];
 						state <= COMMAND_SPECIFY_WR;
 					end
@@ -600,7 +614,7 @@ always @(posedge clk_sys) begin
 
 				COMMAND_SPECIFY_WR:
 				if (~old_wr & wr & a0) begin
-	//				i_hlt <= din[7:1];
+					i_hlt <= din[7:1];
 					ndma_mode <= din[0];
 					state <= COMMAND_IDLE;
 				end
@@ -1097,8 +1111,6 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-						//status[2] [3] = 1'b1; 
-						//status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end
@@ -1107,9 +1119,6 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-						
-		                //status[2] [3] = 1'b1; 
-					    //status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end
@@ -1118,8 +1127,6 @@ always @(posedge clk_sys) begin
 				begin
 					int_state <= '{ 0, 0 };
 					if (~old_wr & wr & a0) begin
-						//status[2] [3] = 1'b1; 
-					    //status[2] [2] = 1'b0; 
 						state <= COMMAND_IDLE;
 					end
 				end

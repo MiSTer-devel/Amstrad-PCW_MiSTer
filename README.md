@@ -68,8 +68,7 @@ PCWPlus mode need to be activate before a compatible game load.
 ## Current issue
 * SymbOS does not work correctly
 * PSI-5 Trading Company - Requires SCAN_EQUAL disk command which is not implemented
-* PCWPLus mode 3 not implemented.
-* Hundra and On the Run not working.
+* APPLE JACK not working
 
 # Changes from previous release
 * Support for PCW9512+ Mode and 3.5" drives
