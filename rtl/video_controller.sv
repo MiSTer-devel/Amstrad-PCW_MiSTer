@@ -44,7 +44,8 @@ module video_controller(
     input wire disable_vid,         // Port F7 / F8 video disable
     input wire ntsc,                // Port F8 NTSC video flag
     input wire [1:0] fake_colour_mode,         // Fake colour mode enabled
-	input wire [1:0] pcw_video_mode,     // Fake colour mode EGA enabled
+	input wire [3:0] pcw_video_mode,     // PCW+ video mode requested by software
+    output logic [3:0] video_mode,  // PCW+ mode the video is drawing in right now
     input wire [7:0] fake_end,      // Fake colour end row
     output logic [7:0] ypos,        // Current yposition for fake colour comparison logic
 	output logic [16:0] vid_addr,   // Address Bus out for reading pixel data & roller ram
@@ -52,17 +53,18 @@ module video_controller(
     input  [3:0] VShift,
     input  [3:0] HShift,
 	output logic [3:0] colour,
+	output logic [7:0] pixel8,
 	output logic ce_pix,
 	output logic hsync,
 	output logic vsync,
 	output logic hb,
 	output logic vb,
+    output logic flyback,
     output logic timer_int
 
     );
 
-    // generate a 16mhz pixel clock based on clk_sys being 64mhz
-    reg [15:0] cnt;
+    reg [15:0] cnt = 16'd0;
     reg pix_stb;
     always @(posedge clk_sys)
         {pix_stb, cnt} <= cnt + 16'h4000;  // divide by 4: (2^16)/2 = 0x4000
@@ -71,8 +73,20 @@ module video_controller(
     logic [10:0] x;  // current pixel x position: 10-bit value: 0-1023
     logic [8:0] y;  // current pixel y position:  9-bit value: 0-511
     logic active;   // screen area action
+    logic fetch_active;         // active, brought forward for the pixel fetch
+    logic [10:0] fetch_x;       // x, brought forward for the pixel fetch
+    logic [3:0] line_mode = 4'd0;
+    always @(posedge clk_sys) begin
+        if (reset) line_mode <= 4'd0;
+        else if (pix_stb & mode_latch) line_mode <= pcw_video_mode;
+    end
+    wire [3:0] vmode = line_mode;
+    assign video_mode = vmode;
+
+    wire [3:0] prefetch = (vmode == 4'd3) ? 4'd10 : 4'd2;
     logic screen_start;   // Positive for one pixel at the very end of frame
     logic line_start;   // Start of horizontal sync line
+    logic mode_latch;
 
     video_sync display (
         .i_clk(clk_sys),
@@ -83,17 +97,22 @@ module video_controller(
         .o_vs(vsync), 
         .o_hblank(hb), 
         .o_vblank(vb), 
+        .o_flyback(flyback),
         .o_x(x), 
         .o_y(y),
         .VShift(VShift),
         .HShift(HShift),
         .o_active(active),
+        .i_prefetch(prefetch),
+        .o_fetch_active(fetch_active),
+        .o_fetch_x(fetch_x),
         .o_screenstart(screen_start),
         .o_linestart(line_start),
+        .o_mode_latch(mode_latch),
         .o_timer(timer_int)
     );
 
-    assign ypos = y;
+    assign ypos = y[7:0];
     // lookup_addr and line_addr driver
     logic [16:0] line_addr = 17'd0;
     logic [15:0] roller_bits; 
@@ -101,13 +120,12 @@ module video_controller(
     roller_states roller_state;
     logic video_lookup;         // memory override bit to get roller ram address
     logic [16:0] lookup_addr;   // address in memory to get roller ram lsb and msb
+    logic old_ls = 1'b0;
     always @ (posedge clk_sys)
     begin
-
-        logic old_ls = 1'b0;
-
         if (reset)
         begin
+            old_ls <= 1'b0;
             roller_state <= IDLE;
             video_lookup <= 1'b1;
             roller_bits <= 'b0;
@@ -122,7 +140,7 @@ module video_controller(
                     roller_state <= GET_LSB;
                     video_lookup <= 1'b1;
                     // Read MSB of address
-                    lookup_addr <= {roller_ptr[7:0],9'b0} + (((y + yscroll) & 8'hff) << 1);
+                    lookup_addr <= {roller_ptr[7:0],9'b0} + {8'd0, (y[7:0] + yscroll), 1'b0};
                 end else begin
                     case(roller_state)
                         IDLE: begin
@@ -133,7 +151,7 @@ module video_controller(
                         GET_LSB: begin
                             video_lookup <= 1'b1;
                             // Read LSB of address
-                            lookup_addr <= {roller_ptr[7:0],9'b0} + (((y + yscroll) & 8'hff) << 1) + 1;
+                            lookup_addr <= {roller_ptr[7:0],9'b0} + {8'd0, (y[7:0] + yscroll), 1'b0} + 17'd1;
                             // din should equal LSB from previous step
                             roller_bits[7:0] <= din;
                             roller_state <= GET_MSB;
@@ -160,9 +178,9 @@ module video_controller(
 
     // Pixel memory lookup address controller
     logic [16:0] pixel_addr /* synthesis keep */;
-    //assign pixel_addr = active ? (pcw_video_mode == 3 ? line_addr + (x[10:4] << 3 ) : line_addr + (x[10:3] << 3 )) : 'b0;
-    //assign pixel_addr = active ? (pcw_video_mode == 3 ? line_addr + (x[10:3] << 4) : line_addr + (x[10:3] << 3)) : 'b0;
-    assign pixel_addr = active ? line_addr + (x[10:3] << 3 ) : 'b0;
+    //assign pixel_addr = active ? (vmode == 3 ? line_addr + (x[10:4] << 3 ) : line_addr + (x[10:3] << 3 )) : 'b0;
+    //assign pixel_addr = active ? (vmode == 3 ? line_addr + (x[10:3] << 4) : line_addr + (x[10:3] << 3)) : 'b0;
+    assign pixel_addr = fetch_active ? line_addr + {6'd0, fetch_x[10:3], 3'b000} : 17'd0;
 
     // Address controller for vid_addr
     assign vid_addr = video_lookup ? lookup_addr : pixel_addr;
@@ -171,14 +189,23 @@ module video_controller(
     logic [3:0] pixel;
     logic [7:0] attr_reg = 'b0;  //Atrubute register for PCWPlus 3 mode
     logic [7:0] attr_shift_reg = 'b0;  // Displaced attribute register for PCWPlus 3 mode
+    logic [3:0] attr_pixel = 'b0;
+    logic [7:0] pixel8_reg = 'b0;
     always @ (posedge clk_sys)
     begin
-        if(ce_pix)
+        if (reset) begin
+            pixel_reg <= 16'd0;
+            attr_reg <= 8'd0;
+            attr_shift_reg <= 8'd0;
+            attr_pixel <= 4'd0;
+            pixel8_reg <= 8'd0;
+            pixel <= 4'd0;
+        end else if(ce_pix)
         begin
-            if (pcw_video_mode == 3) begin  // PCWPlus 3 mode
-                if (x[3:0] == 4'b0000 && active) begin
+            if (vmode == 4'd3) begin  // PCWPlus 3 mode
+                if (fetch_x[3:0] == 4'b0000 && fetch_active) begin
                     attr_reg <= din;
-                end else if (x[3:0] == 4'b1000 && active) begin
+                end else if (fetch_x[3:0] == 4'b1000 && fetch_active) begin
                     pixel_reg <= {{2{din[7]}}, {2{din[6]}}, {2{din[5]}}, {2{din[4]}}, {2{din[3]}}, {2{din[2]}}, {2{din[1]}}, {2{din[0]}}};  // Duplicamos los datos de píxeles;
                      attr_shift_reg <= attr_reg; 
                 end else begin
@@ -186,33 +213,36 @@ module video_controller(
                 end
             end else begin 
             // Every 8 pixels load shift reg
-            if(x[2:0]==3'b000 && active) pixel_reg <={din, din};
+            if(fetch_x[2:0]==3'b000 && fetch_active) pixel_reg <={din, din};
              // else shift pixel register left
             else begin
                    // Shift every other pixel in fake colour mode
                if (fake_colour_mode > 2'b00 && ((ypos == 0 && fake_end > 0) || (ypos > 0 && ypos - 1 < fake_end) || (ypos > 0 && ypos == fake_end))) begin
                     if(fake_colour_mode == 2'b10) begin
-                        if (pcw_video_mode ==2) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
-                        else if (pcw_video_mode ==1) pixel_reg <=  ~x[0] ?  {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;
+
+                        if (vmode ==4'd4) pixel_reg <= pixel_reg;
+                        else if (vmode ==2) pixel_reg <=  (fetch_x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
+                        else if (vmode ==1) pixel_reg <=  ~fetch_x[0] ?  {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;
                         else  pixel_reg <= {pixel_reg[14:0], 1'b0};
 				    end 
-					else if (fake_colour_mode == 2'b11 ) pixel_reg <=  (x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
-					else pixel_reg <=  ~x[0] ? {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
+					else if (fake_colour_mode == 2'b11 ) pixel_reg <=  (fetch_x[1:0] ==2'b00) ? {pixel_reg[11:0],4'b0} : pixel_reg;
+					else pixel_reg <=  ~fetch_x[0] ? {pixel_reg[5:0], 2'b0,pixel_reg[13:8], 2'b0} : pixel_reg;                     
 				end else pixel_reg <= {pixel_reg[14:0], 1'b0}; 					
             end
 		end	
-            // Load pixel register  //fix first and last line in color mode problable a simple solution can be found (previous bug visible with use of f9, f10 and f11)
+            attr_pixel <= pixel_reg[15] ? attr_shift_reg[3:0] : attr_shift_reg[7:4];
+            pixel8_reg <= pixel_reg[15:8];   // Mode 4, same latency as pixel
             pixel <= (fake_colour_mode >2'b00 &&  ((ypos == 0 && fake_end > 0) || (ypos > 0 && ypos - 1 < fake_end) || (ypos > 0 && ypos == fake_end)) ) ? pixel_reg[15:12] : {pixel_reg[15], pixel_reg[15],pixel_reg[15], pixel_reg[15]};
         end
     end
     // Screen on and pixel to draw
     always_comb
     begin
-        if (pcw_video_mode == 3) begin  //PCWplus mode 3
-            if (!disable_vid && active) begin
-                if (pixel_reg[15]) colour = attr_shift_reg[3:0];
-                else colour =  attr_shift_reg[7:4];
-            end else colour = 4'b0000; 
+        pixel8 = (!disable_vid && active) ? pixel8_reg : 8'h00;
+
+        if (vmode == 4'd3) begin  //PCWplus mode 3
+            if (!disable_vid && active) colour = attr_pixel;
+            else colour = 4'b0000; 
         end else begin 
             if(inverse) begin
                 if(!disable_vid && active) colour = ~pixel;

@@ -57,49 +57,38 @@ module kempston_mouse
 logic [7:0] data;
 assign dout = sel ? data : 8'hff;
 
-// Clamped delta movement locked at 15 pixels max
-integer dxt, dyt;
-assign dxt = mouse_x / 4;
-assign dyt = mouse_y / 4;
+function automatic signed [9:0] clamp_delta(input signed [8:0] v);
+    if (v > 9'sd63)       clamp_delta = 10'sd63;
+    else if (v < -9'sd64) clamp_delta = -10'sd64;
+    else                  clamp_delta = {v[8], v};
+endfunction
 
-integer dx, dy;
-assign dx = (dxt > 15) ? 15 : dxt < -16 ? -16 : dxt;
-assign dy = (dyt > 15) ? 15 : dyt < -16 ? -16 : dyt;
+logic [9:0] dxp = 10'd0, dyp = 10'd0;
 
-// Tracked position
-integer dxp, dyp;
-
-// Update absolute positions on mouse input strobe on a virtual screen
 always @(posedge clk_sys)
 begin
-	reg old_pulse;
-	old_pulse <= input_pulse;
+	reg p1, p2;
+	p1 <= input_pulse;
+	p2 <= p1;
 
 	if(reset) begin
-		dxp <= 0; // dx != dy for better mouse detection
-		dyp <= 0;
+		dxp <= 10'd0;
+		dyp <= 10'd0;
 	end
-	// Update positions on new mouse data and wrap around
-	else if(old_pulse != input_pulse) begin
-		// Update X position
-		if(dxp + dx < 0) dxp <= 0;
-		else if(dxp + dx > 719) dxp <= 719;
-		else dxp = dxp + dx;
-		// Update Y position
-		if(dyp + dy < 0) dyp <= 0;
-		else if(dyp + dy > 255) dyp <= 255;
-		else dyp = dyp + dy;
-    end
+	else if(p1 != p2) begin
+		dxp <= dxp + clamp_delta(mouse_x);
+		dyp <= dyp + clamp_delta(mouse_y);
+	end
 end
 
 // Data drivers
 always_comb
 begin
 	casez(addr)
-		3'b0?0: data <= 8'(dxp); //(dxp * 3) / 2); //unsigned'(dxp) & 8'hff; 			// X pos
-		3'b0?1: data <= 8'(dyp);  		   //unsigned'(dyp) & 8'hff;				// Y pos
-		3'b100: data <= {6'b1,~mouse_left,~mouse_right};	// Buttons
-		default: data <= 8'hff;
+		3'b0?0: data = dxp[9:2];							// X pos
+		3'b0?1: data = dyp[9:2];							// Y pos
+		3'b100: data = {6'b1,~mouse_left,~mouse_right};	// Buttons
+		default: data = 8'hff;
 	endcase
 end
 

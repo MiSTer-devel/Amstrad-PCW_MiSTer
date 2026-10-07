@@ -71,6 +71,7 @@ module u765 #(parameter CYCLES = 20'd4000, SPECCY_SPEEDLOCK_HACK = 0)
 localparam OVERRUN_TIMEOUT = CYCLES * 10'd100;		// 13us seconds assuming base clock of 4Mhz
 // Sector time - We are going to fix this to 9 sectors per track for PCW
 localparam SECTOR_TIME = ((CYCLES * 20'd200) / 20'd9) / 20'd4;  // SECTOR time for timing of disk speed.
+localparam INDEX_TO_FIRST_ID = SECTOR_TIME / 20'd2;
 
 localparam UPD765_MAIN_D0B = 0;
 localparam UPD765_MAIN_D1B = 1;
@@ -839,7 +840,7 @@ end
 				COMMAND_RW_DATA_EXEC2:				
 				if (~sd_busy & ~buff_wait) begin
 					i_current_sector <= 1'd1;
-					scan_timer <= 24'd12800000; // ~200ms delay for sector not found simulation
+					scan_timer <= CYCLES * 24'd400; //
 					//i_scanning <= 0;
 					sd_buff_type <= UPD765_SD_BUFF_TRACKINFO;
 					i_seek_pos <= {image_track_offsets_in+1'd1,8'd0}; //TrackInfo+256bytes
@@ -873,6 +874,8 @@ end
 							i_sector_h <= i_h;
 							i_sector_r <= i_r;
 							i_sector_n <= i_n;
+							i_current_sector_pos[ds0][hds] <= i_total_sectors - 1'd1;
+							i_rpm_timer[ds0][hds] <= SECTOR_TIME - INDEX_TO_FIRST_ID;
 						end
 						state <= COMMAND_READ_RESULTS;
 						int_state[ds0] <= 1'b1;
