@@ -379,8 +379,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                     8'hfd: cpudi = model ? daisy_dout : 8'hc8;       // Printer Controller
                     8'he0: begin                // Joystick or CPS
                         case(joy_type)
-                            JOY_SPECTRAVIDEO: cpudi = {3'b0,joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Right,Up,Left,Fire,Down
-                            JOY_CASCADE: cpudi = {~joy0[4],2'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Up,Down,Right,Left
+                            JOY_SPECTRAVIDEO: cpudi = {2'b0,joy0[5],joy0[0],joy0[3],joy0[1],joy0[4],joy0[2]}; // Fire2,Right,Up,Left,Fire,Down
+                            JOY_CASCADE: cpudi = {~joy0[4],~joy0[5],1'b0,~joy0[3],1'b0,~joy0[2],~joy0[0],~joy0[1]}; // Fire,Fire2,Up,Down,Right,Left
                             default: cpudi = 8'h00;       // Dart and CPS
                         endcase
                     end
@@ -392,7 +392,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                     // DK Tronics sound and joystick controller
                     8'ha9: cpudi = dktronics ? (dk_card ? dk_out2 : dk_out) : 8'hff;
                     // Kempston Joystick
-                    8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
+                    8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {2'b0,joy0[5:0]} : 8'hff; // Fire2,Fire,Up,Down,Left,Right
                     // Floppy controller
                     8'b0000000?: cpudi = fdc_dout;    // Floppy read or write
 					     8'h80:  cpudi = port80; 
@@ -1044,7 +1044,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 
     // DKtronics sound and joystick interface
     logic [7:0] dkjoy_io;
-    assign dkjoy_io = {1'b1,~joy0[4],~joy0[3],~joy0[2],~joy0[0],~joy0[1],2'b11};
+    assign dkjoy_io = {~joy0[5],~joy0[4],~joy0[3],~joy0[2],~joy0[0],~joy0[1],2'b11};
 
     logic dk_busdir, dk_bc;
     always_comb
@@ -1083,7 +1083,7 @@ logic [7:0] dacOut, dacOut2;
 
     // One Atari joystick per card
     logic [7:0] dkjoy_io2;
-    assign dkjoy_io2 = {1'b1,~joy1[4],~joy1[3],~joy1[2],~joy1[0],~joy1[1],2'b11};
+    assign dkjoy_io2 = {~joy1[5],~joy1[4],~joy1[3],~joy1[2],~joy1[0],~joy1[1],2'b11};
 
 psg soundchip(
     .clock(clk_sys),
