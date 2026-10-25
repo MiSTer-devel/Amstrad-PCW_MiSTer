@@ -49,7 +49,8 @@ module pcw_core(
     input  [3:0] HShift,
 
     output logic LED,           // LED output
-    output logic [13:0] audiomix,
+    output logic [13:0] audiomix_l,
+    output logic [13:0] audiomix_r,
     input wire [7:0] joy0,
     input wire [7:0] joy1,
     input wire [2:0] joy_type,
@@ -80,6 +81,7 @@ module pcw_core(
 
 
     input wire [1:0]  img_mounted,
+    input wire        img_readonly,    // Valid with img_mounted, u765 latches it per drive
 	 input wire [31:0] img_size,
     input wire [1:0]  density,
 
@@ -119,7 +121,7 @@ module pcw_core(
     wire pix_stb /* synthesis keep */;
     wire disk_ce /* synthesis keep */;
     wire snd_ce /* synthesis keep */;
-	 wire snd_clk /* synthesis keep */;
+	 wire snd_ce2 /* synthesis keep */;
     
 	 ce_generator ce_generator(
         .clk(clk_sys),
@@ -130,7 +132,7 @@ module pcw_core(
         .sdram_clk_ref(sdram_clk_ref),
         .ce_16mhz(pix_stb),
         .ce_4mhz(disk_ce),
-        .clk_2mhz(snd_clk),
+        .ce_2mhz(snd_ce2),
         .ce_1mhz(snd_ce)
     ); 
 	 
@@ -158,10 +160,8 @@ module pcw_core(
     );
 	 
     // Audio channels
-    logic [11:0] ch_a;
-    logic [11:0] ch_b;
-    logic [11:0] ch_c;
-    logic [13:0] audio;
+    logic [11:0] ch_a,  ch_b,  ch_c;    // DK'Sound 0
+    logic [11:0] ch_a2, ch_b2, ch_c2;   // DK'Sound 1
     logic speaker_enable = 1'b0;
 
     // dpram addressing
@@ -180,10 +180,8 @@ module pcw_core(
 	 
 	 reg cpu_ce_g_p /* synthesis keep */;
     reg cpu_ce_g_n /* synthesis keep */;
-    reg gclk /* synthesis keep */;
-    assign cpu_ce_g_p = dn_active ? 0 : cpu_ce_p;
-    assign cpu_ce_g_n = dn_active ? 0 : cpu_ce_n;
-    assign gclk = dn_active ? 0 : clk_sys;
+    assign cpu_ce_g_p = dn_active ? 1'b0 : cpu_ce_p;
+    assign cpu_ce_g_n = dn_active ? 1'b0 : cpu_ce_n;
 	 
 	 reg cpu_reset;
 	 assign cpu_reset = reset || dn_active;
@@ -204,32 +202,7 @@ module pcw_core(
             end
         end
     end
-    assign WAIT_n = tstate == 2'b01 || ~ior || ~iow;
-	 reg mux_sdram;
-    assign mux_sdram = dn_active ? 1'b0 : tstate == 2'b11;
     
-	 // CPU register debugging for Signal Tap
-    logic [15:0] PC /* synthesis keep */; 
-    logic [15:0] SP /* synthesis keep */;
-    logic [7:0]  AC /* synthesis keep */;
-    logic [15:0] BC /* synthesis keep */; 
-    logic [15:0] DE /* synthesis keep */;
-    logic [15:0] HL /* synthesis keep */;
-    logic [15:0] IX /* synthesis keep */;
-    logic [15:0] IY /* synthesis keep */;
-    logic Z /* synthesis keep */;
-    logic N /* synthesis keep */;
-    logic P  /* synthesis keep */;
-    logic C /* synthesis keep */;
-
-    // Used for CPU debugging in SignalTap
-    z80_debugger debugger(
-        .*,
-        .ce(gclk),
-        .m1_n(cpum1),
-        .REG_in(cpu_reg)
-    ); 
-
     // Used to jump to address 0 on reset after ROM loads
     z80_regset z80_regset(
         .*,
@@ -251,7 +224,7 @@ module pcw_core(
 	 // Create processor instance
     T80pa cpu(
         .RESET_n(~cpu_reset),
-        .CLK(gclk),
+        .CLK(clk_sys),
         .CEN_p(cpu_ce_g_p),
         .CEN_n(cpu_ce_g_n),
         .M1_n(cpum1),
@@ -287,32 +260,88 @@ module pcw_core(
     logic [7:0] portF6 /*synthesis noprune*/;     // Y scroll
     logic [7:0] portF7 /*synthesis noprune*/;     // Inverse / Disable
     logic [7:0] portF8 /*synthesis noprune*/;     // Ntsc / Flyback (read)
+    logic frame_flyback;                          // PCW 26-line frame flyback, from video_sync
 	logic [7:0] port80 /*pcwmode  */;
 	logic [7:0] port81 /*colour*/;
-    logic [3:0] pcw_last_index_colour_change;
-    logic [1:0] pcw_last_index_colour_change_component;
     logic [3:0] pcw_video_mode;
-    logic [3:0] index_to_colour;
-    logic [1:0] component; 
-    logic [23:0] value_to_change;
+    // PCW Plus / ColorIN state
+    logic [3:0] pcwplus_index;
+    logic [1:0] pcwplus_component;
+    logic [7:0] pcwplus_border;
+    logic [3:0] pcwplus_new_mode;
+    logic [23:0] pcwplus_palette [15:0];
     logic [23:0] mask_to_apply;
     logic [23:0] value_to_apply;
     logic [4:0] rotation;
-    logic [3:0] temp_cpudo; 
 	logic [23:0] colour_table [25:0];
-   logic [23:0] colour_256;  
-   logic [7:0] red_256, green_256, blue_256;
-	// // Signal to detect the falling edge of iow (valid write)
+
+    // Default 16 colour CGA style palette
+    function automatic [23:0] pcwplus_cga(input [3:0] idx);
+        case(idx)
+            4'd0:  pcwplus_cga = 24'h000000; // Black
+            4'd1:  pcwplus_cga = 24'h0000AA; // Dark Blue
+            4'd2:  pcwplus_cga = 24'h00AA00; // Dark Green
+            4'd3:  pcwplus_cga = 24'h00AAAA; // Cyan
+            4'd4:  pcwplus_cga = 24'hAA0000; // Dark Red
+            4'd5:  pcwplus_cga = 24'hAA00AA; // Magenta
+            4'd6:  pcwplus_cga = 24'hAA5500; // Brown
+            4'd7:  pcwplus_cga = 24'hAAAAAA; // Light Gray
+            4'd8:  pcwplus_cga = 24'h555555; // Dark Gray
+            4'd9:  pcwplus_cga = 24'h5555FF; // Light Blue
+            4'd10: pcwplus_cga = 24'h55FF55; // Light Green
+            4'd11: pcwplus_cga = 24'h55FFFF; // Light Cyan
+            4'd12: pcwplus_cga = 24'hFF5555; // Light Red
+            4'd13: pcwplus_cga = 24'hFF55FF; // Light Magenta
+            4'd14: pcwplus_cga = 24'hFFFF55; // Yellow
+            4'd15: pcwplus_cga = 24'hFFFFFF; // White
+        endcase
+    endfunction
+
+    function automatic [7:0] pcwplus_ramp3(input [2:0] v);
+        case(v)
+            3'd0: pcwplus_ramp3 = 8'h00;
+            3'd1: pcwplus_ramp3 = 8'h24;
+            3'd2: pcwplus_ramp3 = 8'h49;
+            3'd3: pcwplus_ramp3 = 8'h6D;
+            3'd4: pcwplus_ramp3 = 8'h92;
+            3'd5: pcwplus_ramp3 = 8'hB6;
+            3'd6: pcwplus_ramp3 = 8'hDB;
+            3'd7: pcwplus_ramp3 = 8'hFF;
+        endcase
+    endfunction
+    function automatic [7:0] pcwplus_ramp2(input [1:0] v);
+        case(v)
+            2'd0: pcwplus_ramp2 = 8'h00;
+            2'd1: pcwplus_ramp2 = 8'h55;
+            2'd2: pcwplus_ramp2 = 8'hAA;
+            2'd3: pcwplus_ramp2 = 8'hFF;
+        endcase
+    endfunction
+    function automatic [23:0] pcwplus_rgb332(input [7:0] v);
+        pcwplus_rgb332 = {pcwplus_ramp3(v[7:5]), pcwplus_ramp3(v[4:2]), pcwplus_ramp2(v[1:0])};
+    endfunction
+
+    function automatic [23:0] pcwplus_default(input [3:0] mode, input [3:0] idx);
+        case(mode)
+            4'd0: case(idx)     // 720x256x2
+                      4'd0: pcwplus_default = 24'h000000; // Black
+                      4'd1: pcwplus_default = 24'h41FF00; // Green
+                      default: pcwplus_default = pcwplus_cga(idx);
+                  endcase
+            4'd1: case(idx)     // 360x256x4
+                      4'd0: pcwplus_default = 24'h000000; // Black
+                      4'd1: pcwplus_default = 24'h55FFFF; // Light Cyan
+                      4'd2: pcwplus_default = 24'hFF55FF; // Light Magenta
+                      4'd3: pcwplus_default = 24'hFFFFFF; // White
+                      default: pcwplus_default = pcwplus_cga(idx);
+                  endcase
+            default: pcwplus_default = pcwplus_cga(idx);   // 16 colour modes 2 and 3
+        endcase
+    endfunction
 reg iow_prev;
 wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     initial begin
         // Colour in format 24'h
-        colour_table[0]  = 24'h000000; // Black
-        colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
-        colour_table[2]  = 24'h000000; // Black - pcwplus mode 1
-        colour_table[3]  = 24'h55FFFF; // Light Cyan
-        colour_table[4]  = 24'hFF55FF; // Light Magenta
-        colour_table[5]  = 24'hFFFFFF; // White
         colour_table[6]  = 24'h000000; // Black - pcwplus mode 2
         colour_table[7]  = 24'h0000AA; // Dark Blue
         colour_table[8]  = 24'h00AA00; // Dark Green
@@ -361,7 +390,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                     //  8'b10?000??: begin 
                     8'b101000??:   cpudi = amx_dout; //assing only a0 ,a1 ,a2 and a3  
                     // DK Tronics sound and joystick controller
-                    8'ha9: cpudi = dktronics ? dk_out : 8'hff;
+                    8'ha9: cpudi = dktronics ? (dk_card ? dk_out2 : dk_out) : 8'hff;
                     // Kempston Joystick
                     8'h9f: cpudi = (joy_type==JOY_KEMPSTON) ? {3'b0,joy0[4:0]} : 8'hff; // Fire,Up,Down,Left,Right
                     // Floppy controller
@@ -378,7 +407,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
             cpudi = memr ? 8'hff : ram_b_dout;
         end
     end
-    assign portF8 = {1'b0,vblank,fdc_int_latch,~ntsc,timer_misses};
+    assign portF8 = {1'b0,frame_flyback,fdc_int_latch,~ntsc,timer_misses};
 
     logic int_mode_change = 1'b0;
 	always @(posedge clk_sys)
@@ -386,8 +415,9 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 		if(reset) begin
 			port80 <= 8'h00;
 			port81 <= 8'h00;
-			pcw_last_index_colour_change <= 4'h0;
-			pcw_last_index_colour_change_component <= 2'h0;
+			pcwplus_index <= 4'h0;
+			pcwplus_component <= 2'h0;
+			pcwplus_border <= 8'h00;
 			pcw_video_mode <= 4'h0;
 			portF0 <= 8'h80;
 			portF1 <= 8'h81;
@@ -404,13 +434,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
 			speaker_enable <= 1'b0;
             iow_prev <= 1;
             pcw_video_mode <= 0;
+            for (int i = 0; i < 16; i++) pcwplus_palette[i] <= pcwplus_default(4'd0, i[3:0]);
     
-            colour_table[0]  = 24'h000000; // Black
-            colour_table[1]  = 24'h41FF00; // Green - pcwplus mode 0
-            colour_table[2] = 24'h000000; // Black
-            colour_table[3] = 24'h55FFFF; // Light Cyan
-            colour_table[4] = 24'hFF55FF; // Light Magenta
-            colour_table[5] = 24'hFFFFFF; // White
             colour_table[6] = 24'h000000; // Black - pcwplus mode 2
             colour_table[7] = 24'h0000AA; // Dark Blue
             colour_table[8] = 24'h00AA00; // Dark Green
@@ -438,91 +463,49 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         colour_table[25] = palette[55:32];
         iow_prev <= iow;
 		int_mode_change <= 1'b0;
-		if(~iow  && cpua[7:0]==8'h80 && fake_colour_mode ==2'b10) begin
+		if(iow_falling_edge && cpua[7:0]==8'h80 && fake_colour_mode ==2'b10) begin
 			port80 <= cpudo;
-			if (cpudo >= 8'h10) begin
-				pcw_last_index_colour_change <= (port80 % 16);
-				pcw_last_index_colour_change_component <=0;
+			if (cpudo[7:4] != 4'h0) begin
+				pcwplus_index <= cpudo[3:0];
+				pcwplus_component <= 2'h0;
 			end
 		end
 		if(iow_falling_edge && cpua[7:0]==8'h81 && fake_colour_mode ==2'b10) begin
             port81 <= cpudo;
-            if (port80 & 8'h20) begin
-                //change color by palette
-                index_to_colour = pcw_last_index_colour_change;
-                if (index_to_colour > 4'hF) index_to_colour = 4'h0;
-                case (pcw_video_mode)
-					0: value_to_change = index_to_colour;
-					1: value_to_change = (index_to_colour) + 2;
-					2: value_to_change = (index_to_colour) + 6;
-					3: value_to_change = (index_to_colour) + 6;
-				endcase
-                // blue values
-                    case (cpudo % 4)
-                        0: blue_256 = 8'h00;
-                        1: blue_256 = 8'h55;
-                        2: blue_256 = 8'hAA;
-                        3: blue_256 = 8'hFF;
-                    endcase
-
-                // green values
-                    case ((cpudo / 4) % 8)
-                        0: green_256 = 8'h00;
-                        1: green_256 = 8'h24;
-                        2: green_256 = 8'h49;
-                        3: green_256 = 8'h6D;
-                        4: green_256 = 8'h92;
-                        5: green_256 = 8'hB6;
-                        6: green_256 = 8'hDB;
-                        7: green_256 = 8'hFF;
-                    endcase
-
-                // red values
-                    case (cpudo / 32)
-                        0: red_256 = 8'h00;
-                        1: red_256 = 8'h24;
-                        2: red_256 = 8'h49;
-                        3: red_256 = 8'h6D;
-                        4: red_256 = 8'h92;
-                        5: red_256 = 8'hB6;
-                        6: red_256 = 8'hDB;
-                        7: red_256 = 8'hFF;
-                    endcase
-
-                // join the values 
-                colour_256 = {red_256, green_256, blue_256};
-		        colour_table[value_to_change]  =colour_256;
-                pcw_last_index_colour_change <= pcw_last_index_colour_change + 1;
-            end else if (port80 & 8'h10) begin
-				// change color RGB
-				index_to_colour = pcw_last_index_colour_change ;
-				case (pcw_video_mode)
-					0: value_to_change = index_to_colour % 2;
-					1: value_to_change = (index_to_colour % 4) + 2;
-					2: value_to_change = (index_to_colour % 16) + 6;
-					3: value_to_change = (index_to_colour % 16) + 6;
-				endcase
-				component = pcw_last_index_colour_change_component;
-				// Calculate the mask and shift value for the current component
-				rotation = component * 8; // 0, 8, or 16 for R, G, B
-				mask_to_apply = ~(24'hFF << rotation); // Mask to clear the current component
-				value_to_apply = cpudo << rotation; // Shift the new value to the correct position
-				// Update only the current component in the color_256 table
-				colour_table[value_to_change] = (colour_table[value_to_change] & mask_to_apply) | value_to_apply;
-				// Increment the component counter
-				if (pcw_last_index_colour_change_component >= 2'h2) begin
-					pcw_last_index_colour_change_component <= 2'h0; // Wrap around after 2
-					pcw_last_index_colour_change <= pcw_last_index_colour_change + 1;
-					if (pcw_last_index_colour_change >= 4'h0f) pcw_last_index_colour_change <= 4'h0;
-				end else begin
-					pcw_last_index_colour_change_component <= pcw_last_index_colour_change_component + 1;
-				end
-            end else begin
-                // Cambio modo
-                temp_cpudo = cpudo[3:0]; // Usar una variable temporal
-                if (temp_cpudo >= 4'h4) temp_cpudo = 4'h0;
-                pcw_video_mode <= temp_cpudo;
-            end
+            case (port80[7:4])
+                4'h0: begin
+                    if (port80 == 8'h00) begin
+                        pcwplus_new_mode = (cpudo[3:0] > 4'd4) ? 4'd0 : cpudo[3:0];
+                        pcw_video_mode <= pcwplus_new_mode;
+                        if (~cpudo[7]) begin
+                            for (int i = 0; i < 16; i++)
+                                pcwplus_palette[i] <= pcwplus_default(pcwplus_new_mode, i[3:0]);
+                            pcwplus_index <= 4'h0;
+                            pcwplus_component <= 2'h0;
+                        end
+                    end
+                end
+                4'h1: begin
+                    rotation = {pcwplus_component, 3'b000};             // 0, 8 or 16
+                    mask_to_apply = ~(24'hFF << rotation);              // Clear that component
+                    value_to_apply = {16'h0000, cpudo} << rotation;
+                    pcwplus_palette[pcwplus_index] <= (pcwplus_palette[pcwplus_index] & mask_to_apply) | value_to_apply;
+                    if (pcwplus_component >= 2'h2) begin
+                        pcwplus_component <= 2'h0;
+                        pcwplus_index <= pcwplus_index + 4'h1;
+                    end else begin
+                        pcwplus_component <= pcwplus_component + 2'h1;
+                    end
+                end
+                4'h2: begin
+                    pcwplus_palette[pcwplus_index] <= pcwplus_rgb332(cpudo);
+                    pcwplus_index <= pcwplus_index + 4'h1;
+                end
+                4'h3: begin
+                    pcwplus_border <= cpudo;
+                end
+                default: ;
+            endcase
         end 
         if(~iow && cpua[7:0]==8'hf0) portF0 <= cpudo;
         if(~iow && cpua[7:0]==8'hf1) portF1 <= cpudo;
@@ -574,19 +557,24 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic fdc_pe, fdc_ne;
     edge_det fdc_edge_det(.clk_sys(clk_sys), .signal(fdc_int), .pos_edge(fdc_pe), .neg_edge(fdc_ne));
     //  Drive FDC status latch (portF8) and NMI flag
-    logic fdc_status_latch = 1'b0;
 	 logic fdc_int_latch /* synthesis keep */ = 1'b0;
     logic clear_nmi_flag = 1'b0;
     logic nmi_flag = 1'b0;
 
     always @(posedge clk_sys)
     begin
-        if (fdc_pe) begin
-            fdc_int_latch <= 1'b1;
-            if (disk_to_nmi) nmi_flag <= 1'b1;
+        if (reset) begin
+            fdc_int_latch <= 1'b0;
+            nmi_flag <= 1'b0;
         end
-        else if (fdc_ne) fdc_int_latch <= 1'b0;
-        if (clear_nmi_flag) nmi_flag <= 1'b0;
+        else begin
+            if (fdc_pe) begin
+                fdc_int_latch <= 1'b1;
+                if (disk_to_nmi) nmi_flag <= 1'b1;
+            end
+            else if (fdc_ne) fdc_int_latch <= 1'b0;
+            if (clear_nmi_flag) nmi_flag <= 1'b0;
+        end
     end
 
     // Detect timer interrupt firing from video controller (300 hz)
@@ -603,46 +591,62 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic int_line = 1'b0;
     logic nmi_line = 1'b0;
     logic clear_timer = 1'b0;
-	 logic last_cpum1;
-	 
+    logic timer_event_pending;
+    logic timer_m1_stage;
+    logic last_m1_fetch;
+
+    wire m1_fetch = ~cpum1 & ~cpumreq & ~cpurd;
+    wire m1_fetch_start = ~last_m1_fetch & m1_fetch;
+
     // Timer flag and interrupt flag drivers
     always @(posedge clk_sys)
     begin
-        last_cpum1 <= cpum1;
-        last_vid_timer <= vid_timer;
-        int_line <= 1'b0;
-        nmi_line <= nmi_flag;
-        
-        if (~last_vid_timer & vid_timer)
-       begin
-            if (!(&timer_misses)) timer_misses <= timer_misses + 4'b1;
-            timer_line <= 1'b1;
-            int_line <= disk_to_int & fdc_int_latch;
-        end
+        if (reset) begin
+            last_vid_timer <= 1'b0;
+            last_m1_fetch <= 1'b0;
+            timer_event_pending <= 1'b0;
+            timer_m1_stage <= 1'b0;
+            timer_misses <= 4'd0;
+            timer_line <= 1'b0;
+            int_line <= 1'b0;
+            nmi_line <= 1'b0;
+            clear_timer <= 1'b0;
+            clear_nmi_flag <= 1'b0;
+        end else begin
+            last_vid_timer <= vid_timer;
+            last_m1_fetch <= m1_fetch;
+            int_line <= 1'b0;
+            nmi_line <= nmi_flag;
 
-        
-        // Detect clear timer start
-        if (~ior && (cpua[7:0] == 8'hf4) && clear_timer == 1'b0) begin
-            clear_timer <= 1'b1;
-        end
+            if (~last_vid_timer & vid_timer) timer_event_pending <= 1'b1;
 
-       
-        // Deferred timer cleaning
-        if (clear_timer == 1'b1)
-        begin
-            if (~last_cpum1 & cpum1 & cpuiorq)
-            begin
-                clear_timer <= 1'b0;
-                timer_misses <= 'b0;
-                timer_line <= 1'b0;
+            if (m1_fetch_start) begin
+                if (timer_m1_stage) begin
+                    timer_m1_stage <= 1'b0;
+                    if (!(&timer_misses)) timer_misses <= timer_misses + 4'd1;
+                    timer_line <= 1'b1;
+                    int_line <= disk_to_int & fdc_int_latch;
+                end else if (timer_event_pending) begin
+                    timer_event_pending <= 1'b0;
+                    timer_m1_stage <= 1'b1;
+                end
             end
+
+            if (~ior && (cpua[7:0] == 8'hf4)) begin
+                clear_timer <= 1'b1;
+            end else if (clear_timer) begin
+                clear_timer <= 1'b0;
+                timer_misses <= 4'd0;
+                timer_line <= 1'b0;
+                timer_event_pending <= 1'b0;
+                timer_m1_stage <= 1'b0;
+            end
+
+            if (int_mode_pe) begin
+                if (~disk_to_nmi) clear_nmi_flag <= 1'b1;
+            end
+            else clear_nmi_flag <= 1'b0;
         end
-        
-        // Clear interrupts: Check if this makes sense
-        if (int_mode_pe) begin
-            if (disk_to_int) clear_nmi_flag <= 1'b1;
-        end 
-        else clear_nmi_flag <= 1'b0;
     end
 
   
@@ -778,6 +782,11 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     );
 
     wire sdram_access = |ram_b_addr[20:18] && memory_size > MEM_256K;
+
+    wire sdram_wait = sdram_access & ~cpumreq & ~sdram_ready;
+    wire fdc_wait;
+    assign WAIT_n = (cpumreq || tstate == 2'b01) && ~sdram_wait && ~fdc_wait;
+
     assign ram_b_dout = sdram_access ? sdram_b_dout : dpram_b_dout;
 
     // Edge detectors for moving fake pixel line using F9 and F10 keys
@@ -813,6 +822,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic [211:0] cpu_reg = 'b0;
     logic [211:0] cpu_reg_out;
     logic [7:0] ypos;
+    logic [3:0] video_mode;     // PCW+ mode the video is drawing in right now
 
     // Video output controller
     video_controller video(
@@ -827,6 +837,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         .HShift(HShift),
         .fake_colour_mode(fake_colour_mode),
         .pcw_video_mode(pcw_video_mode),
+        .video_mode(video_mode),
         .fake_end(fake_end),
         .ypos(ypos),
 
@@ -839,6 +850,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         .vsync(vsync),
         .hb(hblank),
         .vb(vblank),
+        .flyback(frame_flyback),
+        .pixel8(pixel8),
         .timer_int(vid_timer)
     );
 
@@ -870,6 +883,18 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         else mono_colour = rgb_white;
     end
 
+    logic [7:0] pixel8;         // Raw byte for PCW+ mode 4, a direct 332 colour
+
+    // PCW+ palette index: 1, 2 or 4 bits per pixel depending on the mode
+    logic [3:0] pcwplus_idx;
+    always_comb begin
+        case(video_mode)
+            4'd0: pcwplus_idx = {3'b000, colour[3]};     // 720x256x2
+            4'd1: pcwplus_idx = {2'b00, colour[3:2]};    // 360x256x4
+            default: pcwplus_idx = colour[3:0];          // Modes 2 and 3
+        endcase
+    end
+
     always_comb begin
         RGB = mono_colour;
     
@@ -884,59 +909,10 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                         2'b11: RGB =  colour_table[25];
                     endcase
                 end
-                2'b10: begin    // PCWPLUS 
-                    if (pcw_video_mode ==0) begin
-                        case(colour[3])
-                            1'b0: RGB = colour_table[0];
-                            1'b1: RGB = colour_table[1];
-                        endcase
-                    end else if (pcw_video_mode ==1) begin
-                        case(colour[3:2])
-                            2'b00: RGB =  colour_table[2];
-                            2'b01: RGB =  colour_table[3];
-                            2'b10: RGB =  colour_table[4];
-                            2'b11: RGB =  colour_table[5];
-                        endcase
-                    end else if (pcw_video_mode ==2) begin
-                        case(colour[3:0])
-                            4'b0000: RGB =  colour_table[6];
-                            4'b0001: RGB =  colour_table[7];
-                            4'b0010: RGB =  colour_table[8];
-                            4'b0011: RGB =  colour_table[9];
-                            4'b0100: RGB =  colour_table[10];
-                            4'b0101: RGB =  colour_table[11];
-                            4'b0110: RGB =  colour_table[12];
-                            4'b0111: RGB =  colour_table[13];
-                            4'b1000: RGB =  colour_table[14];
-                            4'b1001: RGB =  colour_table[15];
-                            4'b1010: RGB =  colour_table[16];
-                            4'b1011: RGB =  colour_table[17];
-                            4'b1100: RGB =  colour_table[18];
-                            4'b1101: RGB =  colour_table[19];
-                            4'b1110: RGB =  colour_table[20];
-                            4'b1111: RGB =  colour_table[21];
-                        endcase 
-                    end else if (pcw_video_mode ==3) begin
-                        case(colour[3:0])
-                            4'b0000: RGB =  colour_table[6];
-                            4'b0001: RGB =  colour_table[7];
-                            4'b0010: RGB =  colour_table[8];
-                            4'b0011: RGB =  colour_table[9];
-                            4'b0100: RGB =  colour_table[10];
-                            4'b0101: RGB =  colour_table[11];
-                            4'b0110: RGB =  colour_table[12];
-                            4'b0111: RGB =  colour_table[13];
-                            4'b1000: RGB =  colour_table[14];
-                            4'b1001: RGB =  colour_table[15];
-                            4'b1010: RGB =  colour_table[16];
-                            4'b1011: RGB =  colour_table[17];
-                            4'b1100: RGB =  colour_table[18];
-                            4'b1101: RGB =  colour_table[19];
-                            4'b1110: RGB =  colour_table[20];
-                            4'b1111: RGB =  colour_table[21];
-                        endcase 
-                    end
-                end
+                // PCWPLUS.  Modes 0 to 3 index one flat 16 entry palette; mode 4 takes
+                // its colour straight from the byte as a 332 value and ignores it.
+                2'b10: RGB = (video_mode == 4'd4) ? pcwplus_rgb332(pixel8)
+                                                  : pcwplus_palette[pcwplus_idx];
                 2'b11: begin    //ega
                     case(colour[3:0])
                         4'b0000: RGB =  colour_table[6];
@@ -959,6 +935,8 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
                 end
             endcase
         end
+
+        if (hblank | vblank) RGB = 24'h000000;
     end
 
     logic [7:0] daisy_dout;
@@ -988,6 +966,7 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
         .sel(amx_sel),
         .addr(cpua[1:0]),
         .dout(amx_dout),
+        .input_pulse(ps2_mouse[24]),
         .*
     );
 
@@ -1013,8 +992,6 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic [15:0] kbd_timer;
     logic kbd_update_request;
 
-    // Keyboard matrix is mirrored into RAM at 0x3FF0-0x3FFF.
-    // Trigger a refresh every ~2ms based on clk_sys (32MHz => 64,000 cycles).
     localparam int unsigned KBD_UPDATE_PERIOD_CYCLES = 32_000_000 / 500;
 
     always @(posedge clk_sys) begin
@@ -1072,22 +1049,50 @@ wire iow_falling_edge = (iow_prev == 1'b0) && (iow == 1'b1);
     logic dk_busdir, dk_bc;
     always_comb
     begin
-        if(~ior & cpua[7:0]==8'ha9) {dk_busdir,dk_bc} <= 2'b01;         // Port A9 - Read Register
-        else if(~iow & cpua[7:0]==8'haa) {dk_busdir,dk_bc} <= 2'b11;    // Port AA - Write Address
-        else if(~iow & cpua[7:0]==8'hab) {dk_busdir,dk_bc} <= 2'b10;    // Port AB - Write Register
-        else {dk_busdir,dk_bc} <= 2'b00;
+        if(~ior & cpua[7:0]==8'ha9) {dk_busdir,dk_bc} = 2'b01;          // Port A9 - Read Register
+        else if(~iow & cpua[7:0]==8'haa) {dk_busdir,dk_bc} = 2'b11;     // Port AA - Write Address
+        else if(~iow & cpua[7:0]==8'hab) {dk_busdir,dk_bc} = 2'b10;     // Port AB - Write Register
+        else {dk_busdir,dk_bc} = 2'b00;
     end 
 
-logic [7:0] dk_out;
-logic [7:0] dacOut;
+logic [7:0] dk_out, dk_out2;
+logic [7:0] dacOut, dacOut2;
+
+    logic dk_card = 1'b0;      // Card addressed by $A9 / $AA / $AB, and its DAC and joystick
+    logic dk_stereo = 1'b0;    // Latched the first time card 1 is selected
+    always @(posedge clk_sys)
+    begin
+        if (reset) begin
+            dk_card <= 1'b0;
+            dk_stereo <= 1'b0;
+        end
+        else if (iow_falling_edge && cpua[7:0]==8'haa && dktronics) begin
+            if (cpudo == 8'hff) dk_card <= 1'b0;
+            else if (cpudo == 8'hfe) begin
+                dk_card <= 1'b1;
+                dk_stereo <= 1'b1;
+            end
+        end
+    end
+
+    // Route the bus strobes to the selected card; the other one sees them inactive
+    wire dk0_bdir = dk_busdir & ~dk_card;
+    wire dk0_bc   = dk_bc     & ~dk_card;
+    wire dk1_bdir = dk_busdir &  dk_card;
+    wire dk1_bc   = dk_bc     &  dk_card;
+
+    // One Atari joystick per card
+    logic [7:0] dkjoy_io2;
+    assign dkjoy_io2 = {1'b1,~joy1[4],~joy1[3],~joy1[2],~joy1[0],~joy1[1],2'b11};
 
 psg soundchip(
-    .clock(snd_clk),       
+    .clock(clk_sys),
     .sel(1'b0),            
     .ce(dktronics),
+    .gen_ce(snd_ce2),
     .reset(~reset),         
-    .bdir(dk_busdir),      
-    .bc1(dk_bc),           
+    .bdir(dk0_bdir),      
+    .bc1(dk0_bc),           
     .d(cpudo),             
     .q(dk_out),            
     .a(ch_a),              
@@ -1096,6 +1101,25 @@ psg soundchip(
     .ioad(dkjoy_io),
     .iobd(8'b1),
     .iobq(dacOut)	 
+);
+
+// Second DK'Sound of the Turbosound pair, with its own DAC and joystick
+psg soundchip2(
+    .clock(clk_sys),
+    .sel(1'b0),
+    .ce(dktronics),
+    .gen_ce(snd_ce2),
+    .reset(~reset),
+    .bdir(dk1_bdir),
+    .bc1(dk1_bc),
+    .d(cpudo),
+    .q(dk_out2),
+    .a(ch_a2),
+    .b(ch_b2),
+    .c(ch_c2),
+    .ioad(dkjoy_io2),
+    .iobd(8'b1),
+    .iobq(dacOut2)
 );
 
     // Bleeper audio
@@ -1108,9 +1132,14 @@ psg soundchip(
     logic [11:0] speaker = 'b0;
     logic speaker_out;
     assign speaker = {speaker_out, 11'b0};
-    //assign audio = {2'b00,ch_a} + {2'b00,ch_b} + {2'b00,ch_c} + {2'b00,speaker} + {~dacOut[7],dacOut[6:0],dacOut[7:3]};
-	assign audio = ({2'b00,ch_a} >> 2) + ({2'b00,ch_b} >> 2) + ({2'b00,ch_c} >> 2) + ({2'b00,speaker}) +({~dacOut[7],dacOut[6:0],dacOut[7:3]} >> 2);
-    assign audiomix = audio;
+    wire [13:0] dk0_mix = ({2'b00,ch_a}  >> 2) + ({2'b00,ch_b}  >> 2) + ({2'b00,ch_c}  >> 2)
+                        + ({dacOut, dacOut[7:3]}   >> 2);
+    wire [13:0] dk1_mix = ({2'b00,ch_a2} >> 2) + ({2'b00,ch_b2} >> 2) + ({2'b00,ch_c2} >> 2)
+                        + ({dacOut2,dacOut2[7:3]}  >> 2);
+    wire [13:0] pcw_snd = {2'b00,speaker};   // The PCW's own bleeper, always centred
+
+    assign audiomix_l = pcw_snd + dk0_mix + (dk_stereo ? 14'd0 : dk1_mix);
+    assign audiomix_r = pcw_snd + dk1_mix + (dk_stereo ? 14'd0 : dk0_mix);
 
 
     // Floppy disk controller logic and control
@@ -1123,22 +1152,49 @@ psg soundchip(
     always @(posedge clk_sys) if(img_mounted[0]) u765_ready[0] <= |img_size;
     always @(posedge clk_sys) if(img_mounted[1]) u765_ready[1] <= |img_size;
 
+    wire fdc_slow   = overclock[1];
+    wire fdc_access = fdc_sel & (~ior | ~iow);
+    logic fdc_req = 1'b0, fdc_taken = 1'b0, fdc_idle = 1'b1;
+    logic fdc_a0, fdc_wr;
+    logic [7:0] fdc_din;
+    always @(posedge clk_sys) begin
+        if (disk_ce) fdc_idle <= ~fdc_req;
+        if (~fdc_access) fdc_taken <= 1'b0;
+        if (reset) begin
+            fdc_req   <= 1'b0;
+            fdc_taken <= 1'b0;
+        end
+        else if (fdc_req) begin
+            if (disk_ce) begin
+                fdc_req   <= 1'b0;
+                fdc_taken <= fdc_access;
+            end
+        end
+        else if (fdc_slow & fdc_access & ~fdc_taken & fdc_idle) begin
+            fdc_req <= 1'b1;
+            fdc_a0  <= cpua[0];
+            fdc_wr  <= ~iow;
+            fdc_din <= cpudo;
+        end
+    end
+    assign fdc_wait = fdc_slow & fdc_access & ~fdc_taken;
+
 	 logic [1:0] motor_p;
 	 assign motor_p ={motor,motor};
     logic fdc_int;
-    
+
 	 u765 u765
     (
         .reset(reset),
         .clk_sys(clk_sys),
         .ce(disk_ce),
-        .a0(cpua[0]),
+        .a0(fdc_slow ? fdc_a0 : cpua[0]),
         .ready(u765_ready),
         .motor(motor_p),
         .available(2'b11),
-        .nRD(~fdc_sel | ior), 
-        .nWR(~fdc_sel | iow),
-        .din(cpudo),
+        .nRD(fdc_slow ? ~(fdc_req & ~fdc_wr) : (~fdc_sel | ior)),
+        .nWR(fdc_slow ? ~(fdc_req &  fdc_wr) : (~fdc_sel | iow)),
+        .din(fdc_slow ? fdc_din : cpudo),
         .dout(fdc_dout),
         .int_out(fdc_int),
         .tc(tc),
@@ -1146,7 +1202,7 @@ psg soundchip(
         .activity_led(LED),
         .img_mounted(img_mounted),
         .img_size(img_size[31:0]),
-        .img_wp(2'b0),
+        .img_wp({img_readonly, img_readonly}),
         .sd_lba(sd_lba),
         .sd_rd(sd_rd),
         .sd_wr(sd_wr),

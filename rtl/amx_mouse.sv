@@ -48,6 +48,7 @@ module amx_mouse
     input wire mouse_left,
     input wire mouse_middle,
     input wire mouse_right,
+    input wire input_pulse,         // ps2_mouse[24], toggles once per packet
 
     input wire sel,                 // Select enable line
     input wire [1:0] addr,          // Address line
@@ -58,22 +59,55 @@ module amx_mouse
 reg [7:0] data;
 assign dout = sel ? data : 8'hff;
 
-wire signed [8:0] dxt = mouse_x / 9'sd8;
-wire signed [8:0] dyt = mouse_y / 9'sd8;
+logic signed [9:0] acc_x = 10'sd0, acc_y = 10'sd0;
 
-wire signed [3:0] dx = (dxt > 9'sd7) ? 4'sd7 : dxt < 9'(-8) ? 4'(-8) : 4'(dxt[3:0]);
-wire signed [3:0] dy = (dyt > 9'sd7) ? 4'sd7 : dyt < 9'(-8) ? 4'(-8) : 4'(dyt[3:0]);
+function automatic signed [4:0] steps(input signed [9:0] acc);
+    logic [9:0] mag;
+    mag = acc[9] ? -acc : acc;
+    mag = mag >> 1;
+    if (mag > 10'd15) mag = 10'd15;
+    steps = acc[9] ? -$signed({1'b0, mag[3:0]}) : $signed({1'b0, mag[3:0]});
+endfunction
+
+wire signed [4:0] dx = steps(acc_x);
+wire signed [4:0] dy = steps(acc_y);
+wire [4:0] ndx = -dx;
+wire [4:0] ndy = -dy;
+
+function automatic signed [9:0] acc_next(input signed [9:0] acc, input add,
+                                         input signed [8:0] delta, input take,
+                                         input signed [4:0] step);
+    logic signed [11:0] n;
+    n = {{2{acc[9]}}, acc};
+    if (add)  n = n + {{3{delta[8]}}, delta};
+    if (take) n = n - {{6{step[4]}}, step, 1'b0};
+    if (n > 12'sd32)       n = 12'sd32;
+    else if (n < -12'sd32) n = -12'sd32;
+    acc_next = n[9:0];
+endfunction
 
 always @(posedge clk_sys)
 begin
     logic old_sel;
+    logic p1, p2;
 
     old_sel <= sel;
+    p1 <= input_pulse;
+    p2 <= p1;
+
+    if (reset) begin
+        acc_x <= 10'sd0;
+        acc_y <= 10'sd0;
+    end else begin
+        acc_x <= acc_next(acc_x, p1 ^ p2, mouse_x, ~old_sel & sel && addr == 2'b01, dx);
+        acc_y <= acc_next(acc_y, p1 ^ p2, mouse_y, ~old_sel & sel && addr == 2'b00, dy);
+    end
+
     if(~old_sel & sel) 
     begin
         case(addr)
-            2'b00: data <= (dy < 0) ? {(~dy + 1'd1),4'b0} : {4'b0,dy};
-            2'b01: data <= (dx >= 0) ? {4'b0,dx} : {(~dx + 1'd1),4'b0};
+            2'b00: data <= dy[4] ? {ndy[3:0],4'b0} : {4'b0,dy[3:0]};
+            2'b01: data <= dx[4] ? {ndx[3:0],4'b0} : {4'b0,dx[3:0]};
             2'b10: data <= {5'b1,~mouse_right,~mouse_middle,~mouse_left};
             2'b11: data <= 8'h00;
     endcase

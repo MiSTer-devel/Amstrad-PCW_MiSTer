@@ -77,61 +77,29 @@ integer		 repeat_count;
 logic  [7:0] keys[15:0];
 logic        pressed = 0;
 logic  [7:0] code;
-logic		 shiftstate = 0;
+logic		 shiftstate;
 logic		 extended = 0;
-logic        shifted = 0;
 logic        capslock = 0;
 
-// Magnitude
-logic [6:0] dxm, dym;
-assign dxm = mouse_x[8] ? ~mouse_x[6:0] + 7'd1 : mouse_x[6:0];
-assign dym = mouse_y[8] ? ~mouse_y[6:0] + 7'd1 : mouse_y[6:0];
-// Tracked position
-logic [6:0] dxp;
-logic [6:0] dyp;
+logic [9:0] fxp = 10'd0, fyp = 10'd0;
+wire  [6:0] dxp = fxp[9:3];
+wire  [6:0] dyp = fyp[9:3];
 
-// Update absolute positions on mouse input strobe
+// Update positions on mouse input strobe, wrapping around
 always @(posedge clk_sys)
 begin
-	reg old_pulse;
-	old_pulse <= mouse_pulse;
+	reg p1, p2;
+	p1 <= mouse_pulse;
+	p2 <= p1;
 
 	if(reset) begin
-		dxp <= 7'd0; // dx != dy for better mouse detection
-		dyp <= 7'd0;
+		fxp <= 10'd0;
+		fyp <= 10'd0;
 	end
-	// Update positions on new mouse data and wrap around
-	else if(old_pulse != mouse_pulse) begin
-		dxp <= mouse_x[8] ? dxp - dxm / 7'd8 : dxp + dxm / 7'd8;
-		dyp <= mouse_y[8] ? dyp - dym / 7'd8 : dyp + dym / 7'd8;
-    end
-end
-
-// Output row address for keyboard.  KP=Keypad, Jn=Joystick
-always_comb
-begin
-	case(addr)
-		4'h0: key_data = keys[0];	// 3FF0 - KP2,KP3,KP6,KP9,Paste,F1/F2,KP0,F3/F4
-		4'h1: key_data = keys[1];	// 3FF1 - KP1,KP5,KP4,KP8,Copy,Cut,PTR,Exit
-		4'h2: key_data = keys[2];	// 3FF2 - +,Half,Shift(Both),KP7,>,Return,],Del->
-		4'h3: key_data = keys[3];	// 3FF3 - .,?,;,<,P,[,-,=]
-		4'h4: key_data = keys[4];	// 3FF4 - ',',M,K,L,I,O,9,0
-		4'h5: key_data = keys[5];	// 3FF5 - Space,N,J,H,Y,U,7,8
-		4'h6: key_data = keys[6];   // 3FF6 - V,B,F,G,T,R,S,6
-		4'h7: key_data = keys[7];	// 3FF7 - X,C,D,S,W,E,3,4
-		4'h8: key_data = keys[8];	// 3FF8 - Z,Shf-Lock,A,Tab,Q,Stop,2,1
-		4'h9: key_data = keys[9];	// 3FF9 - <-Del,NA,J1:F1,J1:F2,J1:R,J1:L,J1:D,J1:U
-		4'ha: key_data = keys[10];	// 3FFA - Alt, KP.,KP_Enter,F7/F8,[-],Cancel,Extra,F5/F6
-		// 3FFB - NA,NA,J2:F1,J2:F2,J2:R,J2:L,J2:D,J2:U
-		4'hb: key_data = ~keymouse ? keys[11] : {mouse_middle, dxp};
-		// 3FFC - Mixed. See logic below
-		4'hc: key_data = ~keymouse ? keys[12] : {dyp[6:5],keys[12][5:0]};
-		// 3FFD - Mixed. See logic below
-		4'hd: key_data = ~keymouse ? keys[13] : {keys[13][7:5],dyp[4:0]};
-		// 3FFE - Mixed. See logic below
-		4'he: key_data = ~keymouse ? keys[14] : {mouse_left,mouse_right,keys[14][5:0]};
-		4'hf: key_data = keys[15];	// 3FFF - Mixed. See logic below
-	endcase
+	else if(p1 != p2) begin
+		fxp <= fxp + {mouse_x[8], mouse_x};
+		fyp <= fyp + {mouse_y[8], mouse_y};
+	end
 end
 
 // Detect new input and update latches
@@ -156,7 +124,81 @@ always @(posedge clk_sys) begin
 	end
 end
 
-assign shiftstate = capslock | shifted;
+assign shiftstate = capslock | shift_any;
+
+logic [255:0] kdn   = '0;       // plain scancodes
+logic [255:0] kdn_e = '0;       // E0 prefixed scancodes
+logic comma_sh = 1'b0;          // , was pressed shifted, so it is <
+logic dot_sh   = 1'b0;          // . was pressed shifted, so it is >
+always @(posedge clk_sys) begin
+	if(reset) begin
+		kdn   <= '0;
+		kdn_e <= '0;
+	end
+	else if(input_strobe) begin
+		if(extended) kdn_e[code] <= pressed;
+		else         kdn[code]   <= pressed;
+		if(pressed & ~extended & (code == 8'h41)) comma_sh <= shiftstate;
+		if(pressed & ~extended & (code == 8'h49)) dot_sh   <= shiftstate;
+	end
+end
+wire [255:0] kany = kdn | kdn_e;    // the old per key code ignored the E0 prefix here
+
+// Either shift, or F2, F4, F6 and F8, which the PCW has as shifted F1, F3, F5 and F7
+wire shift_any = kdn[8'h12] | kdn[8'h59] | kdn[8'h06] | kdn[8'h0c] | kdn[8'h0b] | kdn[8'h0a];
+
+// 3FFC
+wire [7:0] row12 = {2'b00,
+                    kdn_e[8'h5a] | (kany[8'h59] & lk2),     // NUM Enter / RIGHT SHIFT
+                    kany[8'h29]  | (kany[8'h1b] & lk2),     // SPACE / S
+                    kany[8'h70]  | (kany[8'h23] & lk2),     // NUM 0 / D
+                    kany[8'h76]  | (kany[8'h1c] & lk2),     // EXIT / A
+                    kany[8'h05]  | (kany[8'h22] & lk2),     // F1/F2 / X
+                    kany[8'h04]  | (kany[8'h1d] & lk2)};    // F3/F4 / W
+// 3FFE
+wire [7:0] row14 = {keys[14][7:6],
+                    kany[8'h59] & lk2,                      // RIGHT SHIFT
+                    kany[8'h29],                            // SPACE
+                    |{kany[8'h1d], kany[8'h2d], kany[8'h4d], kany[8'h5b], kany[8'h4c], kany[8'h49], kany[8'h5d]},  // W R P ] ; . 1/2
+                    |{kany[8'h15], kany[8'h24], kany[8'h44], kany[8'h54], kany[8'h4b], kany[8'h41], kany[8'h4a]},  // Q E O [ L , /
+                    |{kany[8'h1a], kany[8'h22], kany[8'h21], kany[8'h2a], kany[8'h32], kany[8'h31], kany[8'h3a]},  // Z X C V B N M
+                    |{kany[8'h1c], kany[8'h1b], kany[8'h23], kany[8'h2b], kany[8'h34], kany[8'h33], kany[8'h3b]}}; // A S D F G H J
+// 3FFF
+wire [7:0] row15 = {keys[15][7:6],
+                    kany[8'h59] & lk2,                      // RIGHT SHIFT
+                    kany[8'h29],                            // SPACE
+                    |{kany[8'h1d], kany[8'h2d], kany[8'h4d], kany[8'h5b], kany[8'h1b], kany[8'h2b], kany[8'h22], kany[8'h2a]},  // W R P ] S F X V
+                    |{kany[8'h15], kany[8'h24], kany[8'h44], kany[8'h54], kany[8'h1c], kany[8'h23], kany[8'h1a], kany[8'h21]},  // Q E O [ A D Z C
+                    |{kany[8'h32], kany[8'h31], kany[8'h3a], kany[8'h41] & ~comma_sh, kany[8'h49] & ~dot_sh, kany[8'h4a], kany[8'h5d]}, // B N M , . / 1/2
+                    |{kany[8'h41] & comma_sh, kany[8'h49] & dot_sh, kany[8'h33], kany[8'h3b], kany[8'h42], kany[8'h4b], kany[8'h4c]}};  // < > H J K L ;
+
+// Output row address for keyboard.  KP=Keypad, Jn=Joystick
+always_comb
+begin
+	case(addr)
+		4'h0: key_data = keys[0];	// 3FF0 - KP2,KP3,KP6,KP9,Paste,F1/F2,KP0,F3/F4
+		4'h1: key_data = keys[1];	// 3FF1 - KP1,KP5,KP4,KP8,Copy,Cut,PTR,Exit
+		4'h2: key_data = {keys[2][7:6], shift_any, keys[2][4:0]};	// 3FF2 - +,Half,Shift(Both),KP7,>,Return,],Del->
+		4'h3: key_data = keys[3];	// 3FF3 - .,?,;,<,P,[,-,=]
+		4'h4: key_data = keys[4];	// 3FF4 - ',',M,K,L,I,O,9,0
+		4'h5: key_data = keys[5];	// 3FF5 - Space,N,J,H,Y,U,7,8
+		4'h6: key_data = keys[6];   // 3FF6 - V,B,F,G,T,R,S,6
+		4'h7: key_data = keys[7];	// 3FF7 - X,C,D,S,W,E,3,4
+		4'h8: key_data = keys[8];	// 3FF8 - Z,Shf-Lock,A,Tab,Q,Stop,2,1
+		4'h9: key_data = keys[9];	// 3FF9 - <-Del,NA,J1:F1,J1:F2,J1:R,J1:L,J1:D,J1:U
+		4'ha: key_data = keys[10];	// 3FFA - Alt, KP.,KP_Enter,F7/F8,[-],Cancel,Extra,F5/F6
+		// 3FFB - NA,NA,J2:F1,J2:F2,J2:R,J2:L,J2:D,J2:U
+		4'hb: key_data = ~keymouse ? keys[11] : {mouse_middle, dxp};
+		// 3FFC - Mixed. See logic below
+		4'hc: key_data = ~keymouse ? row12 : {dyp[6:5],row12[5:0]};
+		// 3FFD - Mixed. See logic below
+		4'hd: key_data = ~keymouse ? keys[13] : {keys[13][7:5],dyp[4:0]};
+		// 3FFE - Mixed. See logic below
+		4'he: key_data = ~keymouse ? row14 : {mouse_left,mouse_right,row14[5:0]};
+		4'hf: key_data = row15;	// 3FFF - Mixed. See logic below
+	endcase
+end
+
 // Translate PC keyboard presses into PCW keyboard presses
 
 always @(posedge clk_sys) begin
@@ -186,39 +228,27 @@ always @(posedge clk_sys) begin
 	if(input_strobe) begin
 		case(code)
 			8'h12: begin  
-                keys[2][5] <= pressed & ~extended; // LEFT SHIFT (PC)
+                // LEFT SHIFT (PC): see shift_any
 			    keys[1][1] <= pressed & extended; // PRT SCR (PC) -> PTR (PCW)
-                shifted <= pressed & ~extended;
             end
-			8'h59: begin
-                keys[2][5]   <= pressed; // RIGHT SHIFT (PC)
-                shifted <= pressed;
-            end
+			8'h59: ;                        // RIGHT SHIFT (PC): see shift_any
 			8'h11: keys[10][7]  <= pressed; // ALT
 			8'h14: keys[10][1]  <= pressed; // CTRL (PC) -> EXTRA (PCW) 
 			8'h05: keys[0][2]   <= pressed; // F1 (PC) -> F1/F2 (PCW)
 			8'h06: begin
 				keys[0][2]   <= pressed; // F2 (PC) -> F1/F2 (PCW)
-				keys[2][5] <= pressed; // LEFT SHIFT (PC)
-				shifted <= pressed;
 			end
 			8'h04: keys[0][0]   <= pressed; // F3 (PC) -> F3/F4 (PCW)
 			8'h0C: begin
 				keys[0][0]   <= pressed; // F4 (PC) -> F3/F4 (PCW)
-				keys[2][5] <= pressed; // LEFT SHIFT (PC)
-				shifted <= pressed;
 			end				
 			8'h03: keys[10][0]  <= pressed; // F5 (PC) -> F5/F6 (PCW)
 			8'h0B: begin
 				keys[10][0]  <= pressed; // F6 (PC) -> F5/F6 (PCW)
-				keys[2][5] <= pressed; // LEFT SHIFT (PC)
-				shifted <= pressed;
 			end				
 			8'h83: keys[10][4]  <= pressed; // F7 (PC) -> F7/F8 (PCW)
 			8'h0A: begin
 				keys[10][4]  <= pressed; // F8 (PC) -> F7/F9 (PCW)
-				keys[2][5] <= pressed; // LEFT SHIFT (PC)
-				shifted <= pressed;
 			end				
 			8'h1c : keys[8][5] <= pressed; // A
 			8'h32 : keys[6][6] <= pressed; // B
@@ -337,21 +367,7 @@ always @(posedge clk_sys) begin
 			8'h55 : keys[3][0] <= pressed; // =
 		endcase
 
-        // Keyboard processing for combination keys in 3FFC
-		case(code)
-			8'h5a : keys[12][5] <= pressed & extended; // NUM Enter
-			8'h59 : keys[12][5] <= pressed & lk2; // RIGHT SHIFT (PC)
-            8'h29 : keys[12][4] <= pressed; // SPACE
-   			8'h1b : keys[12][4] <= pressed & lk2; // S
-			8'h70 : keys[12][3] <= pressed; // NUM 0
-			8'h23 : keys[12][3] <= pressed & lk2; // D
-			8'h76 : keys[12][2] <= pressed; // ESCAPE (PC) -> EXIT (PCW)
-			8'h1c : keys[12][2] <= pressed & lk2; // A
-			8'h05 : keys[12][1] <= pressed; // F1 (PC) -> F1/F2 (PCW)
-			8'h22 : keys[12][1] <= pressed & lk2; // X
-			8'h04 : keys[12][0] <= pressed; // F3 (PC) -> F3/F4 (PCW)
-			8'h1d : keys[12][0] <= pressed & lk2; // W
-        endcase
+        // 3FFC, 3FFE and 3FFF are built from the key state, see row12, row14 and row15
 
         // Keyboard processing for combination keys in 3FFD
 		case(code)
@@ -364,87 +380,6 @@ always @(posedge clk_sys) begin
 			8'h71 : keys[13][0] <= pressed; // NUM .
         endcase
 
-        // Keyboard processing for combination keys in 3FFE
-		case(code)
-			8'h59 : keys[14][5] <= pressed & lk2; // RIGHT SHIFT (PC)
-            8'h29 : keys[14][4] <= pressed; // SPACE
-            // Bit 3
-			8'h1d : keys[14][3] <= pressed; // W
-			8'h2d : keys[14][3] <= pressed; // R
-			8'h4d : keys[14][3] <= pressed; // P
-			8'h5b : keys[14][3] <= pressed; // ]
-			8'h4c : keys[14][3] <= pressed; // ;
-			8'h49 : keys[14][3] <= pressed; // > & .
-			8'h5d : keys[14][3] <= pressed; // \ (PC) -> 1/2 (PCW)
-            // Bit 2
-			8'h15 : keys[14][2] <= pressed; // Q
-			8'h24 : keys[14][2] <= pressed; // E
-			8'h44 : keys[14][2] <= pressed; // O
-			8'h54 : keys[14][2] <= pressed; // [
-			8'h4b : keys[14][2] <= pressed; // L
-			8'h41 : keys[14][2] <= pressed; // < & ,
-			8'h4a : keys[14][2] <= pressed; // /
-            // Bit 1
-			8'h1a : keys[14][1] <= pressed; // Z
-			8'h22 : keys[14][1] <= pressed; // X
-			8'h21 : keys[14][1] <= pressed; // C
-			8'h2a : keys[14][1] <= pressed; // V
-			8'h32 : keys[14][1] <= pressed; // B
-			8'h31 : keys[14][1] <= pressed; // N
-			8'h3a : keys[14][1] <= pressed; // M
-            // Bit 0
-			8'h1c : keys[14][0] <= pressed; // A
-			8'h1b : keys[14][0] <= pressed; // S
-			8'h23 : keys[14][0] <= pressed; // D
-			8'h2b : keys[14][0] <= pressed; // F
-			8'h34 : keys[14][0] <= pressed; // G
-			8'h33 : keys[14][0] <= pressed; // H
-			8'h3b : keys[14][0] <= pressed; // J
-        endcase
-
-        // Keyboard processing for combination keys in 3FFF
-		case(code)
-			8'h59 : keys[15][5] <= pressed & lk2; // RIGHT SHIFT (PC)
-            8'h29 : keys[15][4] <= pressed; // SPACE
-            // Bit 3
-			8'h1d : keys[15][3] <= pressed; // W
-			8'h2d : keys[15][3] <= pressed; // R
-			8'h4d : keys[15][3] <= pressed; // P
-			8'h5b : keys[15][3] <= pressed; // ]
-			8'h1b : keys[15][3] <= pressed; // S
-			8'h2b : keys[15][3] <= pressed; // F
-			8'h22 : keys[15][3] <= pressed; // X
-			8'h2a : keys[15][3] <= pressed; // V
-            // Bit 2
-			8'h15 : keys[15][2] <= pressed; // Q
-			8'h24 : keys[15][2] <= pressed; // E
-			8'h44 : keys[15][2] <= pressed; // O
-			8'h54 : keys[15][2] <= pressed; // [
-			8'h1c : keys[15][2] <= pressed; // A
-			8'h23 : keys[15][2] <= pressed; // D
-			8'h1a : keys[15][2] <= pressed; // Z
-			8'h21 : keys[15][2] <= pressed; // C
-            // Bit 1
-			8'h32 : keys[15][1] <= pressed; // B
-			8'h31 : keys[15][1] <= pressed; // N
-			8'h3a : keys[15][1] <= pressed; // M
-			8'h41 : begin
-                keys[15][1] <= pressed & ~shiftstate; // ,
-			    keys[15][0] <= pressed & shiftstate; // < - Bit 0
-            end
-			8'h49 : begin
-                keys[15][1] <= pressed & ~shiftstate; // .
-                keys[15][0] <= pressed & shiftstate; // > - Bit 0
-            end
-			8'h4a : keys[15][1] <= pressed; // /
-			8'h5d : keys[15][1] <= pressed; // \ (PC) -> 1/2 (PCW)
-            // Bit 0
-			8'h33 : keys[15][0] <= pressed; // H
-			8'h3b : keys[15][0] <= pressed; // J
-			8'h42 : keys[15][0] <= pressed; // K
-			8'h4b : keys[15][0] <= pressed; // L
-   			8'h4c : keys[15][0] <= pressed; // ;
-        endcase
 		// Fake colour line control keys
 		case(code)
 			8'h01 : begin

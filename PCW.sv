@@ -161,6 +161,8 @@ module emu
 	input         OSD_STATUS
 );
 assign VGA_F1=0;
+assign VGA_SCALER = 0;
+assign VGA_DISABLE = 0;
 assign HDMI_FREEZE = 0;
 assign HDMI_BLACKOUT = 0;
 assign HDMI_BOB_DEINT = 0;
@@ -180,14 +182,12 @@ assign BUTTONS = 0;
 //assign VIDEO_ARX = 4; //status[13] ? 4 : (status[12] ? 20 : 11);
 //assign VIDEO_ARY = 3; //status[13] ? 3 : (status[12] ? 17 : 10);
 
-assign AUDIO_S = 0;
+assign AUDIO_S = 1;
 assign AUDIO_MIX = 0;
 
 assign LED_DISK  = LED;				/* later add disk motor on/off */
 assign LED_POWER = 0;
 assign LED_USER  = ioctl_download;
-
-localparam BOOT_ROM_END = 16'd275;	// Length of boot rom
 
 wire [1:0] ar = status[21:20];
 video_freak video_freak
@@ -252,7 +252,7 @@ wire        ioctl_wr;
 wire [15:0] ioctl_addr;
 wire  [7:0] ioctl_data;
 wire  [7:0] ioctl_index;
-wire		ioctl_wait;
+wire		ioctl_wait = 1'b0;
 wire [31:0] sd_lba[2];
 wire [31:0] sd_lba_0;
 wire  [1:0] sd_rd;
@@ -320,71 +320,9 @@ assign sd_lba[0]=sd_lba_0;
 assign sd_lba[1]=sd_lba_0;
 
 
-wire rom_download = ioctl_download && (ioctl_index==0);
 wire palette_download = ioctl_download && (ioctl_index == 3);
-//wire reset = RESET | status[0] | buttons[1] | rom_download;
-wire reset = ~locked | status[0] | buttons[1] ;
+wire reset = RESET | ~locked | status[0] | buttons[1];
 
-// signals from loader
-logic loader_wr;		
-logic loader_download;
-reg [15:0] loader_addr;
-reg [7:0] loader_data;
-reg [15:0] execute_addr;
-logic execute_enable;
-logic loader_wait;
-
-// Boot loader to kickstart system on a reset
-// Required because the ROM is overwritten and needs to be reloaded every reset
-// First detect end of reset pulse to kickstart download
-logic reset_ne;
-logic first_byte;
-edge_det reset_edge_det(.clk_sys(clk_sys), .signal(reset), .neg_edge(reset_ne));
-
-logic [15:0] read_addr;
-logic [7:0] read_data;
-always @(posedge clk_sys)
-begin
-	if(reset_ne)
-	begin
-		read_addr <= 'b0;
-		loader_addr <= 'b0;
-		loader_wr <= 1'b0;
-		execute_enable <= 1'b0;
-		loader_download <= 1'b1;
-		execute_addr <= 'b0;
-	end
-	else begin
-		if(loader_download) 
-		begin
-			if(~loader_wr) 
-			begin
-				// Transfer loaded byte to loader
-				loader_data <= read_data;
-				loader_wr <= 1'b1;
-			end
-			else begin
-				loader_wr <= 1'b0;
-				loader_addr <= loader_addr + 'd1;
-				read_addr <= read_addr + 'd1;
-				if(read_addr >= BOOT_ROM_END)
-				begin
-					loader_download <= 1'b0;
-					execute_enable <= 1'b1;
-				end
-			end
-		end		
-		if(execute_enable) execute_enable <= 1'b0;
-	end
-end
-
-// Rom containing boot rom code to transfer to address 0
-boot_loader boot_loader
-(
-	.address(read_addr),
-	.model(status[4]),
-	.data(read_data)
-);
 // Palette download
 reg [127:0] palette = 128'h00000032cd320000ff00ffff00000000;
 
@@ -414,7 +352,8 @@ pcw_core pcw_core
 	.HShift(status[45:42]),
 	.VShift(status[49:46]),
 	.LED(LED),
-	.audiomix(audiomix),
+	.audiomix_l(audiomix_l),
+	.audiomix_r(audiomix_r),
 
 	.disp_color(status[6:5]),
 	.ntsc(status[7]),
@@ -433,7 +372,7 @@ pcw_core pcw_core
 	//.execute_enable(execute_enable),
 
 	.img_mounted(img_mounted),
-	//.img_readonly(img_readonly),
+	.img_readonly(img_readonly),
 	.img_size(img_size),
 	.density({1'b1, status[4]}),		// 8256/512 = A=SD, 9512+ A=DD
 
@@ -460,7 +399,6 @@ wire  [2:0] sl = scale > 1'd1 ? scale - 1'd1 : 3'd0;
 
 assign CLK_VIDEO = clk_sys;
 assign VGA_SL = sl[1:0];
-assign HDMI_FREEZE = 0;
 
 video_mixer #( .GAMMA(1)) video_mixer
 (
@@ -477,9 +415,10 @@ video_mixer #( .GAMMA(1)) video_mixer
 	.R({RGB[23:16]})
 );
 
-wire  [13:0] audiomix;
-assign AUDIO_L={audiomix,2'b00};
-//assign AUDIO_L={1'b0,audiomix,1'b0};
-assign AUDIO_R=AUDIO_L;
+wire  [13:0] audiomix_l, audiomix_r;
+// One spare bit at the top so the sum stays inside the positive half of a signed 16
+// bit sample.  Shifting by two instead would overflow into negative on loud passages.
+assign AUDIO_L={1'b0,audiomix_l,1'b0};
+assign AUDIO_R={1'b0,audiomix_r,1'b0};
 
 endmodule

@@ -8,7 +8,7 @@ module ce_generator(
     output logic ce_16mhz,
     output logic ce_4mhz,
     output logic ce_1mhz,
-    output logic clk_2mhz    
+    output logic ce_2mhz
 );	 
     reg [5:0] counter;
     reg [2:0] div_factor;
@@ -38,23 +38,5 @@ module ce_generator(
 
     
 	assign sdram_clk_ref = cpu_ce_p;
-    
-    // Generate 2MHz clock - toggle on every other 4MHz enable pulse
-    reg clk_2mhz_reg;                // Renamed from clk_4mhz_reg
-    reg toggle_control;              // Divider control
-    
-    // Create 2 MHz signal (half of 4 MHz)
-    always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            toggle_control <= 1'b0;
-            clk_2mhz_reg <= 1'b0;
-        end
-        else if (ce_4mhz || cpu_4mhz_n) begin
-            toggle_control <= ~toggle_control;
-            if (toggle_control)      // Only toggle clk_2mhz on every other cpu_ce
-                clk_2mhz_reg <= ~clk_2mhz_reg;
-        end
-    end
-    
-    assign clk_2mhz = clk_2mhz_reg;  
+    assign ce_2mhz = ~|counter[4:0];
 endmodule

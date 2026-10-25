@@ -5,6 +5,7 @@ module psg
 	input  wire       clock,
 	input  wire       sel,
 	input  wire       ce,
+	input  wire       gen_ce,
 
 	input  wire       reset,
 	input  wire       bdir,
@@ -139,11 +140,13 @@ always @(*)
 
 //-------------------------------------------------------------------------------------------------
 
+wire gce = ce & gen_ce;
+
 reg[3:0] cc;
 wire stb = sel ? &cc[2:0] : &cc[3:0];
-always @(negedge clock, negedge reset)
+always @(posedge clock, negedge reset)
 	if(!reset) cc <= 1'd0;
-	else if(ce) cc <= cc+1'd1;
+	else if(gce) cc <= cc+1'd1;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -151,12 +154,12 @@ reg[11:0] a_count;
 wire a_count_ge = a_count >= a_period;
 always @(posedge clock, negedge reset)
 	if(!reset) a_count <= 12'd1;
-	else if(ce) if(stb) if(a_count_ge) a_count <= 12'd1; else a_count <= a_count+1'd1;
+	else if(gce) if(stb) if(a_count_ge) a_count <= 12'd1; else a_count <= a_count+1'd1;
 
 reg a_ff;
 always @(posedge clock, negedge reset)
 	if(!reset) a_ff <= 1'b1;
-	else if(ce) if(stb) if(a_count_ge) a_ff <= ~a_ff;
+	else if(gce) if(stb) if(a_count_ge) a_ff <= ~a_ff;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -164,12 +167,12 @@ reg[11:0] b_count;
 wire b_count_ge = b_count >= b_period;
 always @(posedge clock, negedge reset)
 	if(!reset) b_count <= 12'd1;
-	else if(ce) if(stb) if(b_count_ge) b_count <= 12'd1; else b_count <= b_count+1'd1;
+	else if(gce) if(stb) if(b_count_ge) b_count <= 12'd1; else b_count <= b_count+1'd1;
 
 reg b_ff;
 always @(posedge clock, negedge reset)
 	if(!reset) b_ff <= 1'b1;
-	else if(ce) if(stb) if(b_count_ge) b_ff <= ~b_ff;
+	else if(gce) if(stb) if(b_count_ge) b_ff <= ~b_ff;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -177,12 +180,12 @@ reg[11:0] c_count;
 wire c_count_ge = c_count >= c_period;
 always @(posedge clock, negedge reset)
 	if(!reset) c_count <= 12'd1;
-	else if(ce) if(stb) if(c_count_ge) c_count <= 12'd1; else c_count <= c_count+1'd1;
+	else if(gce) if(stb) if(c_count_ge) c_count <= 12'd1; else c_count <= c_count+1'd1;
 
 reg c_ff;
 always @(posedge clock, negedge reset)
 	if(!reset) c_ff <= 1'b1;
-	else if(ce) if(stb) if(c_count_ge) c_ff <= ~c_ff;
+	else if(gce) if(stb) if(c_count_ge) c_ff <= ~c_ff;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -197,37 +200,37 @@ reg[15:0] e_count;
 wire e_count_ge = e_count >= e_period;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) e_count <= 1'd1;
-	else if(ce) if(stb) if(e_count_ge) e_count <= 1'd1; else e_count <= e_count+1'd1;
+	else if(gce) if(stb) if(e_count_ge) e_count <= 1'd1; else e_count <= e_count+1'd1;
 
 reg e_ff;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) e_ff <= 1'b1;
-	else if(ce) if(stb) if(e_count_ge) e_ff <= ~e_ff;
+	else if(gce) if(stb) if(e_count_ge) e_ff <= ~e_ff;
 
 reg e_ff_p;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) e_ff_p <= 1'b0;
-	else if(ce) if(stb) begin e_ff_p <= 1'b0; if(e_count_ge) if(!e_ff) e_ff_p <= 1'b1; end
+	else if(gce) if(stb) begin e_ff_p <= 1'b0; if(e_count_ge) if(!e_ff) e_ff_p <= 1'b1; end
 
 reg v_continue;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) v_continue <= 1'b1;
-	else if(ce) if(stb) if(e_ff_p) if(&sc) v_continue <= e_continue;
+	else if(gce) if(stb) if(e_ff_p) if(&sc) v_continue <= e_continue;
 
 reg v_attack;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) v_attack <= 1'b0;
-	else if(ce) if(stb) if(e_ff_p) if(&sc && e_alternate && !v_hold) v_attack <= ~v_attack;
+	else if(gce) if(stb) if(e_ff_p) if(&sc && e_alternate && !v_hold) v_attack <= ~v_attack;
 
 reg v_hold;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) v_hold <= 1'b0;
-	else if(ce) if(stb) if(e_ff_p) if(&sc) v_hold <= e_hold;
+	else if(gce) if(stb) if(e_ff_p) if(&sc) v_hold <= e_hold;
 
 reg[3:0] sc;
 always @(posedge clock, posedge e_reset)
 	if(e_reset) sc <= 1'd0;
-	else if(ce) if(stb) if(e_ff_p) if((&sc && !e_hold) || (!(&sc) && !v_hold)) sc <= sc+1'd1;
+	else if(gce) if(stb) if(e_ff_p) if((&sc && !e_hold) || (!(&sc) && !v_hold)) sc <= sc+1'd1;
 
 wire env_s = e_attack ? ~v_attack : v_attack;
 wire[3:0] e_level = !v_continue ? 1'd0 : !env_s ? ~sc : sc;
@@ -238,23 +241,23 @@ reg[4:0] n_count;
 wire n_count_ge = n_count >= n_period;
 always @(posedge clock, negedge reset)
 	if(!reset) n_count <= 1'd1;
-	else if(ce) if(stb) if(n_count_ge) n_count <= 1'd1; else n_count <= n_count+1'd1;
+	else if(gce) if(stb) if(n_count_ge) n_count <= 1'd1; else n_count <= n_count+1'd1;
 
 reg n_ff;
 always @(posedge clock, negedge reset)
 	if(!reset) n_ff <= 1'b1;
-	else if(ce) if(stb) if(n_count_ge) n_ff <= ~n_ff;
+	else if(gce) if(stb) if(n_count_ge) n_ff <= ~n_ff;
 
 reg n_ff_p;
 always @(posedge clock, negedge reset)
 	if(!reset) n_ff_p <= 1'b0;
-	else if(ce) if(stb) begin n_ff_p <= 1'b0; if(n_count_ge) if(!n_ff) n_ff_p <= 1'b1; end
+	else if(gce) if(stb) begin n_ff_p <= 1'b0; if(n_count_ge) if(!n_ff) n_ff_p <= 1'b1; end
 
 reg[16:0] n_lfsr;
 wire n_bit = n_lfsr[0];
 always @(posedge clock, negedge reset)
 	if(!reset) n_lfsr <= 17'b1_0000_0000_0000_0000;
-	else if(ce) if(stb) if(n_ff_p) n_lfsr <= { n_lfsr[3]^n_lfsr[0], n_lfsr[16:1] };
+	else if(gce) if(stb) if(n_ff_p) n_lfsr <= { n_lfsr[3]^n_lfsr[0], n_lfsr[16:1] };
 
 //-------------------------------------------------------------------------------------------------
 
